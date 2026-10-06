@@ -1,0 +1,3920 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#FFF8FB">
+<title>DOCX / PDF → Quiz Parser</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Quicksand:wght@500;600;700&family=Nunito:wght@400;600;700&display=swap">
+<!-- JSZip / Tesseract.js / heic-to are loaded on demand via loadScriptOnce() instead of
+     eagerly here — together they weigh several MB and most visits only ever need JSZip. -->
+<style>
+:root {
+  --font-display: 'Quicksand', 'Segoe UI', sans-serif;
+  --font-body: 'Nunito', 'Segoe UI', sans-serif;
+
+  --bg-grad-start: #FFF8FB;
+  --bg-grad-mid:   #FFF8FB;
+  --bg-grad-end:   #FFF8FB;
+
+  --surface: #FFFFFF;
+  --surface-soft: #FDF0F7;
+  --surface-strong: #F9E4F3;
+
+  --line: #D9A4EC;
+  --line-soft: #E9D3F5;
+
+  --ink: #4A2E63;
+  --ink-soft: #9B7DB3;
+  --ink-faint: #D3BFE3;
+
+  --coral: #A78BFA;
+  --rose: #D9A4EC;
+  --accent-grad: linear-gradient(135deg, var(--coral), var(--rose));
+  --accent-soft-bg: #F1E0FA;
+
+  --success-bg: #E3F6E8; --success-text: #2F8F52; --success-strong: #3FA565;
+  --warning-bg: #FFF0CE; --warning-text: #B9710A;
+  --danger-bg:  #FFE3E3; --danger-text:  #E0566F;
+  --ocr-bg:     #FFE7D2; --ocr-text:     #D97A3F;
+  --neutral-bg: #F4E9E4; --neutral-text: #A98A82;
+  --pdf-bg:     #E3EAFF; --pdf-text:     #4361C2;
+
+  --shadow-soft: 0 6px 18px rgba(255,137,102,.16);
+  --shadow-tiny: 0 2px 8px rgba(255,137,102,.13);
+
+  color-scheme: light;
+}
+
+/* ── Dark mode ──────────────────────────────────────────────────── */
+[data-theme="dark"] {
+  --bg-grad-start: #120330;
+  --bg-grad-mid:   #120330;
+  --bg-grad-end:   #120330;
+
+  --surface: #1E0845;
+  --surface-soft: #260B54;
+  --surface-strong: #2E1064;
+
+  --line: #7C5CC7;
+  --line-soft: #4A2E85;
+
+  --ink: #EDE3FA;
+  --ink-soft: #B49CDC;
+  --ink-faint: #6B4E9E;
+
+  --coral: #C4A3F5;
+  --rose: #D9A4EC;
+  --accent-soft-bg: #3A1A63;
+
+  --success-bg: #182E20; --success-text: #5EC47A; --success-strong: #4DB86A;
+  --warning-bg: #2A2010; --warning-text: #E8A030;
+  --danger-bg:  #2E1518; --danger-text:  #F07090;
+  --ocr-bg:     #2E2010; --ocr-text:     #F0A060;
+  --neutral-bg: #242020; --neutral-text: #907870;
+  --pdf-bg:     #151D38; --pdf-text:     #6888E0;
+
+  --shadow-soft: 0 6px 18px rgba(0,0,0,.4);
+  --shadow-tiny: 0 2px 8px rgba(0,0,0,.3);
+
+  color-scheme: dark;
+}
+
+/* Dark mode theme-color handled via JS */
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg-grad-mid);
+  color: var(--ink);
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: max(24px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(32px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  overscroll-behavior-y: contain;
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font-family: inherit; touch-action: manipulation; }
+button:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
+
+.icon { width: 1em; height: 1em; display: inline-block; vertical-align: -0.15em; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.icon-spin { animation: icon-spin .9s linear infinite; transform-origin: 50% 50%; }
+@keyframes icon-spin { to { transform: rotate(360deg); } }
+
+h1 { font-family: var(--font-display); font-size: 1.55rem; font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; background: var(--accent-grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+h1 .icon { width: 1.25em; height: 1.25em; color: var(--coral); }
+.sub { font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 24px; }
+
+/* .drop-zone: viền "chạy" dùng SVG overlay (rect + stroke-dasharray/
+   stroke-dashoffset) đặt CHỒNG ĐÚNG vị trí border cũ — cách này cho chuyển
+   động rõ ràng dễ thấy hơn nhiều so với việc dịch background-position của
+   các dải màu giống hệt nhau (mắt gần như không phân biệt được đoạn nào
+   đang di chuyển). Bản thân .drop-zone không còn cần vẽ viền qua CSS nữa,
+   chỉ giữ border trong suốt để layout/padding không đổi.
+   Xem thẻ <svg class="dz-border-svg"> ngay bên trong .drop-zone trong HTML. */
+.drop-zone {
+  position: relative;
+  border: 2px solid transparent;
+  border-radius: 20px;
+  padding: 36px 20px;
+  text-align: center;
+  cursor: pointer;
+  background: var(--surface);
+  margin-bottom: 20px;
+  transition: background-color .2s, transform .1s;
+  box-shadow: var(--shadow-soft);
+  touch-action: manipulation;
+}
+.drop-zone:active { transform: scale(0.99); }
+.drop-zone.drag { background-color: var(--accent-soft-bg); }
+.drop-zone.drag .dz-border-svg rect { stroke: var(--rose); animation-play-state: paused; }
+
+/* SVG phủ toàn bộ .drop-zone, không chặn click (pointer-events: none) */
+.dz-border-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.dz-border-svg rect {
+  fill: none;
+  stroke: var(--coral);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  /* 12px nét — 8px khoảng trống: tỉ lệ tương phản rõ hơn bản cũ (10/10) để
+     mắt dễ theo dõi chuyển động hơn */
+  stroke-dasharray: 12 8;
+  animation: dz-march 0.7s linear infinite;
+  /* Glow nhẹ quanh viền để nổi bật hơn trên nền tối (dark mode) — trước đây
+     không có nên viền coral chìm vào nền, đặc biệt rõ ở dark mode. */
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--coral) 70%, transparent));
+}
+@keyframes dz-march {
+  to { stroke-dashoffset: -40; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dz-border-svg rect { animation: none; }
+}
+.drop-zone .icon { width: 44px; height: 44px; color: var(--coral); margin-bottom: 10px; }
+.drop-zone p { color: var(--ink-soft); font-size: 0.9rem; }
+.drop-zone span { color: var(--rose); font-weight: 700; }
+.drop-zone-meta { font-size: 0.78rem; margin-top: 6px; color: var(--ink-faint); }
+input[type=file] { display: none; }
+
+/* ── Main progress bar (cute pastel) ─────────────────────────── */
+.progress {
+  display: none;
+  background: var(--surface);
+  border-radius: 20px;
+  padding: 14px 16px 16px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow-soft);
+  border: 1.5px solid var(--line-soft);
+}
+.progress-inner { display: flex; flex-direction: column; gap: 8px; }
+.progress-msg-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.88rem; font-weight: 700; color: var(--coral);
+  min-height: 22px;
+}
+.progress-msg-row .icon { flex-shrink: 0; }
+.progress-msg-row .lbl { flex: 1; }
+
+.progress-bar-wrap {
+  position: relative;
+  width: 100%;
+  height: 12px;
+  background: var(--surface-strong);
+  border-radius: 99px;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, #FFB3BA, #FFB3D9, #C9A7F5, #A7D4F5, #A7F5D4);
+  background-size: 300% 100%;
+  animation: pbar-rainbow 3s linear infinite, pbar-pulse 1.8s ease-in-out infinite alternate;
+  width: 30%;
+  transition: width .4s cubic-bezier(.4,0,.2,1);
+}
+.progress-bar-shimmer {
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.55) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: pbar-shimmer 1.4s ease-in-out infinite;
+  border-radius: 99px;
+}
+@keyframes pbar-rainbow {
+  0%   { background-position: 0% 50%; }
+  100% { background-position: 300% 50%; }
+}
+@keyframes pbar-pulse {
+  from { opacity: .85; }
+  to   { opacity: 1; }
+}
+@keyframes pbar-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+/* indeterminate bounce when no % available */
+.progress-bar-fill.indeterminate {
+  width: 40% !important;
+  animation: pbar-rainbow 3s linear infinite, pbar-bounce 1.6s ease-in-out infinite alternate;
+}
+@keyframes pbar-bounce {
+  0%   { transform: translateX(-60%); opacity: .8; }
+  100% { transform: translateX(160%); opacity: 1; }
+}
+
+.stats { display: none; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+.stat-card { flex: 1; min-width: 70px; background: var(--surface); border-radius: 14px; padding: 10px 12px; text-align: center; box-shadow: var(--shadow-tiny); }
+.stat-card .num { font-family: var(--font-display); font-size: 1.5rem; font-weight: 700; color: var(--rose); }
+.stat-card .lbl { font-size: 0.7rem; color: var(--ink-soft); margin-top: 2px; }
+
+.warn-box { display: none; align-items: flex-start; gap: 8px; background: var(--warning-bg); border: 1px solid #B9710A33; border-radius: 14px; padding: 12px 14px; font-size: 0.82rem; color: var(--warning-text); margin-bottom: 16px; line-height: 1.6; }
+.warn-box .icon { margin-top: 0.15em; }
+
+/* Empty state: hiện khi parse xong nhưng không tìm thấy câu hỏi nào */
+.empty-box { display: none; flex-direction: column; align-items: center; text-align: center; gap: 10px; background: var(--surface); border: 1.5px dashed var(--line); border-radius: 16px; padding: 28px 20px; margin-bottom: 16px; }
+.empty-box .icon { width: 34px; height: 34px; color: var(--ink-faint); }
+.empty-box .empty-title { font-weight: 700; font-size: 0.95rem; color: var(--ink); }
+.empty-box .empty-msg { font-size: 0.82rem; color: var(--ink-soft); line-height: 1.6; max-width: 32em; }
+.empty-box .empty-hint { font-size: 0.78rem; color: var(--ink-faint); font-family: monospace; background: var(--surface-soft); border-radius: 8px; padding: 6px 10px; }
+
+.ocr-section { display: none; background: var(--surface); border: 1px solid var(--line-soft); border-radius: 18px; padding: 14px; margin-bottom: 20px; box-shadow: var(--shadow-tiny); }
+.ocr-title { display: flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--rose); font-weight: 700; margin-bottom: 4px; }
+.ocr-hint { font-size: 0.76rem; color: var(--ink-soft); margin-bottom: 12px; line-height: 1.5; }
+.ocr-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.ocr-thumb { position: relative; border-radius: 12px; overflow: hidden; border: 2px solid var(--line); cursor: pointer; aspect-ratio: 1; background: var(--surface-soft); touch-action: manipulation; -webkit-touch-callout: none; }
+.ocr-thumb.sel { border-color: var(--rose); }
+.ocr-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; -webkit-touch-callout: none; }
+.ocr-thumb .chk { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%; background: #ffffffb0; border: 1.5px solid var(--line); display: flex; align-items: center; justify-content: center; color: var(--ink-soft); }
+.ocr-thumb .chk .icon { width: 12px; height: 12px; }
+.ocr-thumb.sel .chk { background: var(--rose); border-color: var(--rose); color: #fff; }
+.ocr-thumb .sz { position: absolute; bottom: 0; left: 0; right: 0; background: #00000055; font-size: 0.62rem; color: #fff; padding: 2px 4px; text-align: center; }
+.ocr-progress { display: none; flex-direction: column; gap: 8px; font-size: 0.8rem; font-weight: 700; color: var(--coral); margin-bottom: 10px; line-height: 1.5; }
+.msg-row { display: flex; align-items: flex-start; gap: 8px; }
+
+.ocr-pbar-wrap {
+  width: 100%; height: 12px;
+  background: var(--surface-strong);
+  border-radius: 99px; overflow: hidden; margin-top: 4px;
+  position: relative;
+}
+.ocr-pbar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #FFB3BA, #FFB3D9, #C9A7F5, #A7D4F5, #A7F5D4);
+  background-size: 300% 100%;
+  animation: pbar-rainbow 3s linear infinite;
+  border-radius: 99px; transition: width .3s ease; width: 0%;
+}
+.ocr-pbar-wrap::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,.5) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: pbar-shimmer 1.4s ease-in-out infinite;
+  border-radius: 99px;
+}
+.ocr-pbar-label { font-size: 0.75rem; font-weight: 600; color: var(--ink-soft); margin-top: 3px; }
+.ocr-pbar-fill.ocr-pbar-indeterminate {
+  width: 40% !important;
+  animation: pbar-rainbow 3s linear infinite, pbar-bounce 1.6s ease-in-out infinite alternate;
+}
+
+.badge-ocr { background: var(--ocr-bg); color: var(--ocr-text); }
+
+.badge-pdf { background: var(--pdf-bg); color: var(--pdf-text); }
+
+
+
+.tab-row { display: none; gap: 8px; margin-bottom: 16px; }
+.tab-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; border-radius: 20px; border: none; font-size: 0.82rem; font-weight: 700; cursor: pointer; background: var(--surface-soft); color: var(--ink-soft); }
+.tab-btn.active { background: var(--accent-soft-bg); color: var(--rose); }
+
+.section-label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-soft); margin-bottom: 8px; }
+.output-box { display: none; background: var(--surface); border-radius: 16px; padding: 16px; margin-bottom: 16px; font-family: monospace; font-size: 0.82rem; line-height: 1.7; white-space: pre-wrap; word-break: break-word; max-height: 400px; overflow-y: auto; border: 1px solid var(--line-soft); }
+
+.actions { display: none; gap: 10px; margin-bottom: 24px; }
+.btn { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 13px; border-radius: 14px; border: none; font-size: 0.9rem; font-weight: 700; cursor: pointer; transition: transform .1s, opacity .1s; }
+.btn:active { transform: scale(0.97); opacity: 0.9; }
+.btn-primary { background: var(--accent-grad); color: #fff; box-shadow: var(--shadow-soft); }
+.btn-secondary { background: var(--surface-soft); color: var(--rose); border: 1px solid var(--line); }
+
+.q-preview { display: none; flex-direction: column; gap: 12px; margin-bottom: 24px; }
+.q-card { background: var(--surface); border-radius: 16px; padding: 14px 16px; border: 1px solid var(--line-soft); box-shadow: var(--shadow-tiny); content-visibility: auto; contain-intrinsic-size: 220px; }
+.q-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.q-num { font-family: var(--font-display); font-size: 0.74rem; color: var(--rose); font-weight: 700; }
+.detect-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 0.65rem; padding: 3px 9px; border-radius: 10px; font-weight: 700; }
+.detect-badge .icon { width: 0.85em; height: 0.85em; }
+.badge-u { background: var(--accent-soft-bg); color: var(--rose); }
+.badge-b { background: var(--ocr-bg); color: var(--ocr-text); }
+.badge-s { background: var(--danger-bg); color: var(--danger-text); }
+.badge-t { background: var(--warning-bg); color: var(--warning-text); }
+.badge-n { background: var(--neutral-bg); color: var(--neutral-text); }
+.badge-shared { background: var(--pdf-bg); color: var(--pdf-text); }
+.badge-warn-ocr { background: var(--warning-bg); color: var(--warning-text); }
+
+.q-text { font-size: 0.95rem; margin-bottom: 8px; line-height: 1.55; }
+.q-text[contenteditable="true"] { outline: none; border-bottom: 1px dashed var(--line); padding-bottom: 2px; cursor: text; }
+.q-text[contenteditable="true"]:focus { border-bottom-color: var(--rose); background: var(--surface-soft); border-radius: 4px; padding: 2px 4px; }
+.edit-hint { display: flex; align-items: center; gap: 5px; font-size: 0.7rem; color: var(--ink-faint); margin-bottom: 6px; }
+
+@media (hover: hover) and (pointer: fine) {
+  .opt:hover:not(.correct) { background: var(--surface-strong); border-color: var(--line); }
+}
+.opt { display: flex; align-items: flex-start; gap: 6px; font-size: 0.92rem; padding: 7px 10px; border-radius: 10px; color: var(--ink); user-select: none; transition: background .15s, border-color .15s; border: 1px solid transparent; }
+.opt-text[contenteditable="true"] { cursor: text; outline: none; flex: 1; user-select: text; }
+.opt-text[contenteditable="true"]:focus { background: var(--surface-soft); border-radius: 6px; }
+.opt.correct { background: var(--success-bg); border-color: var(--success-strong); color: var(--success-text); font-weight: 700; }
+.opt.struck { text-decoration: line-through; color: var(--ink-faint); }
+
+.opt-key-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; min-height: 30px; border-radius: 9px; cursor: pointer; padding: 0 4px; font-weight: 700; font-family: var(--font-display); background: var(--surface-strong); color: var(--coral); user-select: none; flex-shrink: 0; touch-action: manipulation; transition: background .15s, color .15s, transform .1s; }
+.opt-key-badge:active { transform: scale(0.9); }
+.opt-key-badge.is-selected { background: var(--success-strong); color: #fff; }
+
+.pick-ans-hint { display: flex; align-items: center; gap: 5px; font-size: 0.72rem; color: var(--ink-soft); margin-top: 4px; }
+.opts { display: flex; flex-direction: column; gap: 5px; }
+.no-answer { font-size: 0.78rem; color: var(--warning-text); margin-top: 6px; }
+
+/* Nút xóa 1 đáp án — chỉ hiện khi câu hỏi còn > 2 đáp án, để không thể xóa
+   xuống dưới mức tối thiểu (1 đáp án thì không còn là trắc nghiệm). */
+.opt-del-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; color: var(--ink-faint); background: transparent; cursor: pointer; touch-action: manipulation; transition: background .15s, color .15s; }
+.opt-del-btn:active { transform: scale(0.9); }
+@media (hover: hover) and (pointer: fine) {
+  .opt-del-btn:hover { background: var(--danger-bg, #fde8e8); color: var(--danger-text, #c0392b); }
+}
+.opt-del-btn .icon { width: 16px; height: 16px; }
+
+/* Nút "+ Thêm đáp án" ở cuối danh sách options */
+.opt-add-btn { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 10px; margin-top: 2px; border-radius: 10px; border: 1px dashed var(--line); color: var(--ink-soft); font-size: 0.85rem; font-weight: 600; cursor: pointer; touch-action: manipulation; transition: background .15s, border-color .15s; }
+.opt-add-btn:active { transform: scale(0.99); }
+@media (hover: hover) and (pointer: fine) {
+  .opt-add-btn:hover { background: var(--surface-strong); border-color: var(--coral); color: var(--coral); }
+}
+.opt-add-btn .icon { width: 16px; height: 16px; }
+.opt-add-btn[disabled] { opacity: .45; pointer-events: none; }
+
+.draft-banner { background: var(--success-bg); border: 1px solid #2F8F5230; border-radius: 14px; padding: 10px 14px; font-size: 0.82rem; color: var(--success-text); margin-bottom: 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.draft-banner-msg { flex: 1; display: inline-flex; align-items: center; gap: 6px; }
+.draft-btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; border-radius: 10px; border: none; font-weight: 700; cursor: pointer; font-size: 0.8rem; }
+.draft-btn-restore { background: #ffffffb0; color: var(--success-text); }
+.draft-btn-discard { background: var(--surface-soft); color: var(--ink-soft); }
+
+.ocr-raw-fallback { margin-top: 8px; background: var(--surface-soft); border: 1px solid var(--line-soft); border-radius: 10px; padding: 10px; font-family: monospace; font-size: 0.74rem; color: var(--ink-soft); white-space: pre-wrap; max-height: 240px; overflow-y: auto; }
+
+.load-more-row { margin-bottom: 12px; }
+
+
+/* ── Dark mode toggle → giờ là FAB chính, bấm bung ra menu con ───── */
+.fab-group {
+  position: fixed;
+  top: max(14px, env(safe-area-inset-top));
+  right: max(14px, env(safe-area-inset-right));
+  z-index: 999;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  will-change: transform;
+}
+.theme-toggle {
+  position: relative;
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent-grad);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--coral) 45%, transparent), 0 1px 3px rgba(0,0,0,.1);
+  transition: box-shadow .25s ease, transform .35s cubic-bezier(.34,1.56,.64,1);
+  touch-action: manipulation;
+}
+.theme-toggle::before {
+  content: "";
+  position: absolute; inset: -1.5px;
+  border-radius: 50%;
+  padding: 1.5px;
+  background: linear-gradient(135deg, #fff8, transparent 60%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  pointer-events: none;
+}
+.theme-toggle:active { transform: scale(0.88); }
+.theme-toggle .icon { width: 21px; height: 21px; position: relative; transition: transform .4s cubic-bezier(.34,1.56,.64,1); }
+.theme-toggle .icon-moon { display: none; }
+.theme-toggle .icon-sun  { display: block; }
+[data-theme="dark"] .theme-toggle .icon-moon { display: block; }
+[data-theme="dark"] .theme-toggle .icon-sun  { display: none; }
+.fab-group.open .theme-toggle { transform: rotate(90deg); box-shadow: 0 6px 20px color-mix(in srgb, var(--coral) 60%, transparent); }
+.fab-group.open .theme-toggle:active { transform: rotate(90deg) scale(0.88); }
+
+/* Menu con: ẩn mặc định, bung ra khi .fab-group có class "open" */
+.fab-sub-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 9px;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-8px) scale(0.95);
+  transform-origin: top right;
+  transition: opacity .2s ease, transform .2s ease, max-height .2s ease;
+  pointer-events: none;
+}
+.fab-group.open .fab-sub-list {
+  max-height: 320px;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+.fab-sub-btn {
+  display: flex; align-items: center; gap: 8px;
+  height: 40px;
+  padding: 0 16px 0 13px;
+  border-radius: 22px;
+  border: 1px solid var(--line-soft);
+  background: var(--surface);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: var(--shadow-tiny);
+  touch-action: manipulation;
+  transition: background .15s, border-color .15s, color .15s, transform .12s, box-shadow .15s;
+  opacity: 0;
+  transform: translateX(8px);
+}
+.fab-group.open .fab-sub-btn {
+  opacity: 1;
+  transform: translateX(0);
+  transition: background .15s, border-color .15s, color .15s, transform .28s cubic-bezier(.34,1.56,.64,1), box-shadow .15s, opacity .28s ease;
+}
+.fab-group.open .fab-sub-btn:nth-child(1) { transition-delay: .03s; }
+.fab-group.open .fab-sub-btn:nth-child(2) { transition-delay: .07s; }
+.fab-group.open .fab-sub-btn:nth-child(3) { transition-delay: .11s; }
+.fab-group.open .fab-sub-btn:nth-child(4) { transition-delay: .15s; }
+.fab-sub-btn:active { transform: scale(0.94) !important; }
+.fab-sub-btn .icon { width: 17px; height: 17px; flex-shrink: 0; }
+.fab-sub-btn.is-active {
+  background: var(--accent-grad);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 3px 10px color-mix(in srgb, var(--coral) 40%, transparent);
+}
+
+/* Segmented control OCR: Auto / Anh / Việt cùng hiện, bấm thẳng thay vì dò cycle */
+.fab-ocr-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 40px;
+  padding: 3px;
+  border-radius: 22px;
+  border: 1px solid var(--line-soft);
+  background: var(--surface);
+  box-shadow: var(--shadow-tiny);
+  opacity: 0;
+  transform: translateX(8px);
+}
+.fab-group.open .fab-ocr-group {
+  opacity: 1;
+  transform: translateX(0);
+  transition: transform .28s cubic-bezier(.34,1.56,.64,1), opacity .28s ease;
+  transition-delay: .11s;
+}
+.fab-ocr-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px;
+  flex-shrink: 0;
+  color: var(--ink-faint);
+}
+.fab-ocr-icon .icon { width: 15px; height: 15px; }
+.fab-ocr-opt {
+  height: 32px;
+  padding: 0 11px;
+  border-radius: 18px;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background .15s, color .15s, transform .1s;
+}
+.fab-ocr-opt:active { transform: scale(0.93); }
+.fab-ocr-opt.is-active {
+  background: var(--accent-grad);
+  color: #fff;
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--coral) 40%, transparent);
+}
+
+/* Overlay mờ phía sau khi menu bung, để bấm ra ngoài là đóng lại */
+.fab-scrim {
+  position: fixed; inset: 0; z-index: 998;
+  background: rgba(0,0,0,0);
+  backdrop-filter: blur(0px);
+  -webkit-backdrop-filter: blur(0px);
+  display: none;
+  transition: background .25s ease, backdrop-filter .25s ease;
+}
+.fab-group.open ~ .fab-scrim {
+  display: block;
+  background: rgba(20,8,40,0.12);
+  backdrop-filter: blur(1.5px);
+  -webkit-backdrop-filter: blur(1.5px);
+}
+
+/* ── Popup nhập đề chung cho câu không có đề ─────────────────────── */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 1200;
+  background: rgba(0,0,0,0.45);
+  display: flex; align-items: flex-end; justify-content: center;
+  padding: 0;
+}
+@media (min-width: 640px) {
+  .modal-backdrop { align-items: center; padding: 20px; }
+}
+.modal-box {
+  width: 100%;
+  max-width: 480px;
+  background: var(--surface);
+  border-radius: 20px 20px 0 0;
+  padding: 20px 18px max(18px, env(safe-area-inset-bottom));
+  box-shadow: var(--shadow-tiny);
+  border: 1px solid var(--line-soft);
+}
+@media (min-width: 640px) {
+  .modal-box { border-radius: 20px; padding: 20px; }
+}
+.modal-title { font-weight: 700; font-size: 1rem; color: var(--ink); margin-bottom: 6px; }
+.modal-msg { font-size: 0.82rem; color: var(--ink-soft); line-height: 1.55; margin-bottom: 12px; }
+.modal-textarea {
+  width: 100%; box-sizing: border-box;
+  border: 1.5px solid var(--line); border-radius: 12px;
+  padding: 10px 12px; font-size: 0.9rem; font-family: inherit;
+  color: var(--ink); background: var(--surface-soft);
+  resize: vertical; min-height: 64px;
+}
+.modal-textarea:focus { outline: none; border-color: var(--coral); }
+.modal-actions { display: flex; gap: 10px; margin-top: 14px; }
+.modal-btn { flex: 1; height: 42px; border-radius: 12px; border: none; font-weight: 700; font-size: 0.86rem; cursor: pointer; touch-action: manipulation; }
+.modal-btn-primary { background: var(--coral); color: #fff; }
+.modal-btn-secondary { background: var(--surface-soft); color: var(--ink-soft); border: 1.5px solid var(--line); }
+.modal-btn:active { transform: scale(0.97); }
+.modal-btn-all {
+  width: 100%; box-sizing: border-box;
+  margin-top: 10px; height: 40px;
+  border-radius: 12px; border: 1.5px dashed var(--line);
+  background: transparent; color: var(--ink-soft);
+  font-size: 0.78rem; font-weight: 600; cursor: pointer;
+  touch-action: manipulation;
+}
+.modal-btn-all:active { transform: scale(0.97); background: var(--surface-soft); }
+
+</style>
+</head>
+<body>
+<!-- FAB: dark mode (chính) + menu con (đề chung / trọng âm) -->
+<div class="fab-group" id="fabGroup">
+  <button class="theme-toggle" id="themeToggle" onclick="toggleFabMenu()" title="Thêm tuỳ chọn / Chuyển chế độ sáng-tối" aria-label="Mở menu tuỳ chọn">
+    <!-- Sun icon (shown in dark mode) -->
+    <svg class="icon icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="4"/>
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+    </svg>
+    <!-- Moon icon (shown in light mode) -->
+    <svg class="icon icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+  </button>
+  <div class="fab-sub-list">
+    <button class="fab-sub-btn" id="autoPromptBtn" onclick="toggleAutoPrompt()" title="Tự động hỏi đề cho câu thiếu đề">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17h.01"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 2-3 4"/><circle cx="12" cy="12" r="9"/></svg>
+      <span>Hỏi đề</span>
+    </button>
+    <button class="fab-sub-btn" id="stressModeBtn" onclick="toggleStressMode()" title="Nhận diện gạch chân trọng âm tiếng Anh">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><path d="M8 16V8a4 4 0 0 1 8 0v8"/><path d="M8 12h8"/></svg>
+      <span>Dấu nhấn</span>
+    </button>
+    <div class="fab-ocr-group" id="ocrLangGroup" role="group" aria-label="Ngôn ngữ quét ảnh OCR">
+      <span class="fab-ocr-icon">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      </span>
+      <button class="fab-ocr-opt" data-lang="auto" onclick="setOcrLang('auto')" title="Tự nhận diện — quét cả Anh lẫn Việt">Auto</button>
+      <button class="fab-ocr-opt" data-lang="eng" onclick="setOcrLang('eng')" title="Chỉ quét tiếng Anh — nhanh và chính xác hơn nếu đề toàn tiếng Anh">Anh</button>
+      <button class="fab-ocr-opt" data-lang="vie" onclick="setOcrLang('vie')" title="Chỉ quét tiếng Việt — nhanh và chính xác hơn nếu đề toàn tiếng Việt">Việt</button>
+    </div>
+    <button class="fab-sub-btn" onclick="toggleThemeOnly()" title="Chuyển chế độ sáng/tối">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      <span>Sáng / Tối</span>
+    </button>
+  </div>
+</div>
+<div class="fab-scrim" onclick="closeFabMenu()"></div>
+
+<!-- Popup: nhập đề chung cho câu không có đề -->
+<div class="modal-backdrop" id="promptModalBackdrop" style="display:none;">
+  <div class="modal-box" id="promptModalBox">
+    <div class="modal-title">Câu <span id="promptQNum"></span> không có đề</div>
+    <div class="modal-msg">File chỉ có các đáp án A/B/C/D cho câu này (thường do nhiều câu dùng chung 1 đề). Nhập đề bài — mặc định áp dụng cho các câu liền sau cũng không có đề, tới khi gặp câu có đề mới. Nếu cả file chỉ dùng chung 1 đề duy nhất, chọn nút bên dưới để áp dụng cho tất cả.</div>
+    <textarea class="modal-textarea" id="promptQInput" placeholder="Nhập đề bài cho câu này..." rows="3"></textarea>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-secondary" onclick="skipQuestionPrompt()">Bỏ qua câu này</button>
+      <button class="modal-btn modal-btn-primary" onclick="submitQuestionPrompt()">Áp dụng</button>
+    </div>
+    <button class="modal-btn modal-btn-all" onclick="submitQuestionPromptToAll()">Dùng đề này cho TOÀN BỘ câu thiếu đề còn lại</button>
+  </div>
+</div>
+
+
+<h1><svg class="icon" viewBox="0 0 432 432" fill="url(#learnsy-logo-grad)"><defs><linearGradient id="learnsy-logo-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#F9A8D4"/><stop offset="55%" stop-color="#D9A4EC"/><stop offset="100%" stop-color="#A78BFA"/></linearGradient></defs><rect width="432" height="432" rx="96" fill="url(#learnsy-logo-grad)"/><path d="M128 130a22 22 0 0 1 22-22 22 22 0 0 1 22 22v108h96a22 22 0 0 1 22 22 22 22 0 0 1-22 22h-118a22 22 0 0 1-22-22Z" fill="#FFFFFF"/><circle cx="278" cy="150" r="42" fill="none" stroke="#FFFFFF" stroke-width="20"/><line x1="308" y1="180" x2="346" y2="218" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round"/></svg> DOCX → Quiz</h1>
+<p class="sub">Upload file Word — tự nhận dạng trắc nghiệm nhiều định dạng</p>
+
+<div class="drop-zone" id="dropZone">
+  <svg class="dz-border-svg" aria-hidden="true">
+    <rect x="2" y="2" rx="18" ry="18"/>
+  </svg>
+  <svg class="icon" viewBox="0 0 24 24" stroke="currentColor">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+  </svg>
+  <p><span>Chọn file .docx, .pdf hoặc ảnh</span></p>
+  <input type="file" id="fileInput" accept=".docx,.pdf,.jpg,.jpeg,.png,.heic,.heif" multiple>
+</div>
+
+<div class="progress" id="progress">
+  <div class="progress-inner">
+    <div class="progress-msg-row" id="progressMsgRow"></div>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-fill" id="progressBarFill"></div>
+      <div class="progress-bar-shimmer"></div>
+    </div>
+  </div>
+</div>
+<div class="stats" id="stats">
+  <div class="stat-card"><div class="num" id="sTOTAL">0</div><div class="lbl">Tổng câu</div></div>
+  <div class="stat-card"><div class="num" id="sOK">0</div><div class="lbl">Có đáp án</div></div>
+  <div class="stat-card"><div class="num" id="sNA">0</div><div class="lbl">Thiếu đáp án</div></div>
+</div>
+<div class="warn-box" id="warnBox"></div>
+<div class="empty-box" id="emptyBox"></div>
+<div class="ocr-section" id="ocrSection">
+  <div class="ocr-title" id="ocrTitle"></div>
+  <div class="ocr-hint" id="ocrHint">Có thể là đề/câu hỏi dạng scan. Chọn ảnh muốn quét (đã tự chọn sẵn ảnh lớn) rồi bấm Quét. Đã hỗ trợ nhận diện đáp án được tô VÀNG (dạ quang); không nhận diện được tô đậm/gạch chân nên câu chưa tô vàng sẽ cần bạn tự điền đáp án đúng.</div>
+  <div class="ocr-thumbs" id="ocrThumbs"></div>
+  <div class="load-more-row" id="loadMoreRow" style="display:none">
+    <button class="btn btn-secondary" id="loadMoreBtn" onclick="loadMorePdfThumbs()" style="width:100%"><svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12l7 7 7-7"/></svg> Tải thêm trang</button>
+  </div>
+  <div class="ocr-progress" id="ocrProgress"></div>
+  <button class="btn btn-primary" id="ocrBtn" onclick="runOcr()" style="width:100%"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg> Quét ảnh đã chọn</button>
+</div>
+<div class="tab-row" id="tabRow">
+  <button class="tab-btn active" id="tabText"    onclick="switchTab('text')"><svg class="icon" viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 10h6M9 14h6"/></svg> Text output</button>
+  <button class="tab-btn"        id="tabPreview" onclick="switchTab('preview')"><svg class="icon" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg> Xem trước</button>
+</div>
+<div class="section-label" id="outLabel" style="display:none">Kết quả — dán vào Learnsy</div>
+<div class="output-box" id="outputBox"></div>
+<div class="actions" id="actions">
+  <button class="btn btn-primary" id="copyBtn" onclick="copyOutput()"><svg class="icon" viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 10h6M9 14h6"/></svg> Copy tất cả</button>
+  <button class="btn btn-secondary" onclick="resetAll()"><svg class="icon" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg> File khác</button>
+</div>
+<div class="q-preview" id="qPreview"></div>
+
+<script>
+// ── Icon set (inline SVG) ───────────────────────────────────────────────────
+// Replaces emoji glyphs everywhere in the UI: emoji render inconsistently
+// (sometimes blurry, sometimes missing entirely) across Android keyboards,
+// OEM skins and WebView versions, whereas an inline SVG with stroke="currentColor"
+// always renders crisp and themeable at any size/DPI.
+const ICONS = {
+  doc:        '<svg class="icon" viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>',
+  pdf:        '<svg class="icon" viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z"/><path d="M14 2v6h6"/><path d="M10 10.5c0-.83.67-1.5 1.5-1.5S13 9.67 13 10.5v1c0 .83-.67 1.5-1.5 1.5H11v2H9.5V10.5H10zm1.5 1c.28 0 .5-.22.5-.5v-1c0-.28-.22-.5-.5-.5H11v2h.5zm2.5-2H15c1.1 0 2 .9 2 2v1c0 1.1-.9 2-2 2h-1.5V9.5zm1.5 3.5c.55 0 1-.45 1-1v-1c0-.55-.45-1-1-1H15V13h.5zm2-3.5H19v1.5h1V12h-1v2H17.5V9.5H18z"/></svg>',
+  loader:     '<svg class="icon icon-spin" viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10"/></svg>',
+  image:      '<svg class="icon" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="1.6" fill="currentColor" stroke="none"/><path d="m21 15-5-5L5 21"/></svg>',
+  monitor:    '<svg class="icon" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>',
+  search:     '<svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>',
+  clipboard:  '<svg class="icon" viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M9 10h6M9 14h6"/></svg>',
+  eye:        '<svg class="icon" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
+  refresh:    '<svg class="icon" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>',
+  save:       '<svg class="icon" viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/></svg>',
+  undo:       '<svg class="icon" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5A5.5 5.5 0 0 1 20 14.5 5.5 5.5 0 0 1 14.5 20H11"/></svg>',
+  x:          '<svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  xCircle:    '<svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg>',
+  check:      '<svg class="icon" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L20 6.5"/></svg>',
+  alertTriangle: '<svg class="icon" viewBox="0 0 24 24"><path d="M12 3 2 20h20L12 3z"/><path d="M12 9.5v4"/><circle cx="12" cy="16.7" r="1" fill="currentColor" stroke="none"/></svg>',
+  checkCircle: '<svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12.5 3 3 5-6.5"/></svg>',
+  hand:       '<svg class="icon" viewBox="0 0 24 24"><path d="M9 11.5V5.5a1.5 1.5 0 0 1 3 0v6"/><path d="M12 11V4.5a1.5 1.5 0 0 1 3 0V11"/><path d="M15 11V6.5a1.5 1.5 0 0 1 3 0V14c0 3.3-2.7 6-6 6h-1c-2 0-3.2-.6-4.4-2.1l-3-3.8c-.5-.7-.4-1.6.3-2.1.6-.5 1.5-.4 2 .2L9 14.5"/></svg>',
+  camera:     '<svg class="icon" viewBox="0 0 24 24"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.3"/></svg>',
+  edit:       '<svg class="icon" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+  plus:       '<svg class="icon" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  trash:      '<svg class="icon" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/><path d="M10 11v6M14 11v6"/></svg>',
+  layers:     '<svg class="icon" viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg>',
+};
+
+// Renders {icon}+{text label} into an element. Re-creates the SVG node only
+// when the icon name actually changes between calls; otherwise it just
+// updates the label's text node. This matters because some callers (e.g.
+// Tesseract's recognition progress logger) update the SAME element many
+// times per second — without this guard, every tick would re-parse a fresh
+// SVG into the DOM for no visual benefit, which is wasted work on the kind
+// of mid-range Android devices teachers actually grade on.
+function setIconText(target, iconName, text) {
+  const node = typeof target === 'string' ? document.getElementById(target) : target;
+  if (!node) return;
+  // If targeting #progress, write into the inner msg-row and manage the bar
+  const msgRow = node.id === 'progress'
+    ? node.querySelector('#progressMsgRow')
+    : (node.classList.contains('msg-row') ? node : null);
+  const writeTarget = msgRow || node;
+  if (writeTarget.dataset.iconName !== iconName) {
+    writeTarget.innerHTML = (ICONS[iconName] || '') + '<span class="lbl"></span>';
+    writeTarget.dataset.iconName = iconName;
+  }
+  writeTarget.lastElementChild.textContent = text;
+  // Auto-manage the progress bar fill animation
+  if (node.id === 'progress') {
+    const fill = node.querySelector('#progressBarFill');
+    const barWrap = node.querySelector('.progress-bar-wrap');
+    const msgRowEl = node.querySelector('#progressMsgRow');
+    if (fill && barWrap) {
+      if (iconName === 'xCircle') {
+        // Error state: hide bar, turn text red
+        barWrap.style.display = 'none';
+        if (msgRowEl) msgRowEl.style.color = 'var(--danger-text)';
+      } else {
+        barWrap.style.display = '';
+        if (msgRowEl) msgRowEl.style.color = '';
+        // Extract % from text like "Đang tải pdf.js... 72%"
+        const pct = text.match(/(\d{1,3})%/);
+        if (pct) {
+          fill.classList.remove('indeterminate');
+          fill.style.width = Math.min(100, parseInt(pct[1])) + '%';
+        } else {
+          fill.classList.add('indeterminate');
+          fill.style.width = '';
+        }
+      }
+    }
+  }
+}
+
+// #ocrProgress sometimes holds a single status line, and sometimes a status
+// line PLUS a scrollable raw-text fallback box stacked underneath it — so it
+// is a column flex container, and a one-line status update should only ever
+// touch its first child "row", never replace the whole container (which
+// would also wipe out the optimisation in setIconText for fast Tesseract
+// progress ticks).
+function setOcrProgress(prog, iconName, text) {
+  prog.style.display = 'flex';
+  let row = prog.querySelector(':scope > .msg-row');
+  if (!row) {
+    prog.innerHTML = '';
+    row = document.createElement('div'); row.className = 'msg-row'; prog.appendChild(row);
+    const wrap = document.createElement('div'); wrap.className = 'ocr-pbar-wrap';
+    const fill = document.createElement('div'); fill.className = 'ocr-pbar-fill ocr-pbar-indeterminate'; wrap.appendChild(fill);
+    prog.appendChild(wrap);
+    const lbl = document.createElement('div'); lbl.className = 'ocr-pbar-label'; prog.appendChild(lbl);
+  }
+  setIconText(row, iconName, text);
+  // Ensure bar is in indeterminate mode
+  const fill = prog.querySelector('.ocr-pbar-fill');
+  if (fill && !fill.classList.contains('ocr-pbar-indeterminate')) {
+    fill.classList.add('ocr-pbar-indeterminate');
+    fill.style.width = '';
+  }
+}
+
+// ── Lazy-load heavy libraries only when actually needed ───────────────────
+// JSZip / Tesseract.js / heic-to together weigh several MB. Loading all three
+// unconditionally on first paint — as <script> tags in <head> — wasted data
+// and delayed interactivity for the common case where a visit never touches
+// OCR or HEIC at all. Each is now fetched once, on first real use.
+const LIB_URLS = {
+  jszip:     'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
+  tesseract: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js',
+  heicTo:    'https://cdn.jsdelivr.net/npm/heic-to@1.5.2/dist/iife/heic-to.js',
+  // pdf.js — dùng bản legacy (UMD) để tương thích loadScriptOnce, không cần import()
+  pdfjs:     'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+  pdfjsWorker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
+};
+const _loadedScripts = {};
+// onProgress(pct, loadedBytes, totalBytes) — pct là số nguyên 0-99 trong lúc tải
+// (chừa 100 lại cho lúc script chạy xong), hoặc null nếu CDN không trả về
+// Content-Length (lúc đó không thể tính % nên gọi onProgress(null) để UI
+// hiện trạng thái "đang tải" thay vì treo một con số sai).
+
+// ── PWA: cache các thư viện CDN nặng (xem sw.js cùng thư mục) để vẫn parse
+// được khi mất mạng hoặc khi mạng trường học chặn/chậm CDN quốc tế. Bọc
+// điều kiện protocol vì Service Worker KHÔNG hoạt động khi mở trực tiếp
+// file (file://) — chỉ chạy sau khi deploy lên http(s) thật (Cloudflare
+// Pages/Vercel/VPS). Lỗi đăng ký (ví dụ quên upload sw.js) không được làm
+// hỏng app chính — OCR/parse vẫn chạy bình thường, chỉ là không có cache
+// offline cho lần sau.
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}
+function loadScriptOnce(url, onProgress) {
+  if (!_loadedScripts[url]) {
+    _loadedScripts[url] = loadScriptWithProgress(url, onProgress).catch(err => {
+      delete _loadedScripts[url]; // cho phép thử lại nếu lần này lỗi
+      throw err;
+    });
+  }
+  return _loadedScripts[url];
+}
+
+async function loadScriptWithProgress(url, onProgress) {
+  // Ưu tiên tải bằng fetch() để đọc được Content-Length và báo % theo từng
+  // chunk nhận về — đây là cách duy nhất để biết tiến độ tải vì thẻ
+  // <script src> không có sự kiện progress. Nếu fetch lỗi (mạng chặn CORS,
+  // trình duyệt cũ, v.v.) thì rơi về cách cũ (<script src>, không có %).
+  try {
+    const res = await fetch(url);
+    if (!res.ok || !res.body) throw new Error('fetch-failed');
+    const total = parseInt(res.headers.get('Content-Length') || '0', 10);
+    const reader = res.body.getReader();
+    const chunks = [];
+    let loaded = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      loaded += value.length;
+      if (onProgress) onProgress(total ? Math.min(99, Math.round(loaded / total * 100)) : null, loaded, total);
+    }
+    const code = await new Blob(chunks).text();
+    const s = document.createElement('script');
+    s.text = code; // chạy script, tương đương <script src> đã tải xong
+    document.head.appendChild(s);
+    if (onProgress) onProgress(100, loaded, total);
+  } catch (e) {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = url;
+      s.onload = () => resolve();
+      s.onerror = () => reject(new Error('Không tải được thư viện cần thiết. Kiểm tra kết nối mạng rồi thử lại.'));
+      document.head.appendChild(s);
+    });
+    if (onProgress) onProgress(100, 0, 0);
+  }
+}
+
+const WNS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const MNS = 'http://schemas.openxmlformats.org/officeDocument/2006/math';
+// RE_Q: nhận diện đầu câu hỏi — các dạng hỗ trợ:
+//   Câu 1.  Câu 1)  Câu 1:  Câu 1 (1đ):  câu  2.
+//   Question 1.  Bài 1:  Phần 1.
+//   II.3.  (mã phần Roman numeral)
+//   (1) text   [1] text
+//   1. text    1) text  (số đứng đầu, có khoảng trắng sau dấu)
+//   1.Text     1)Text   (số đứng đầu, DÍNH LIỀN dấu — lỗi gõ phổ biến, chỉ
+//                        chấp nhận khi ký tự ngay sau là CHỮ CÁI, không phải
+//                        chữ số, để không nhầm với số liệu kiểu "1.5 kg")
+const RE_Q = /^(?:(?:câu|cau)\s*\d+\s*(?:\([^)]{0,10}\))?\s*[.):\-–—]|(?:question|bài|phần)\s*\d+\s*[.):\-–—]|[IVXLC]+\.\d+[.):\s]|\(\s*\d+\s*\)\s*\S|\[\s*\d+\s*\]\s*\S|\d+\s*[.)](?:\s+\S|(?=[\p{L}])))/iu;
+
+// RE_SECTION: nhận diện dòng TIÊU ĐỀ PHẦN LỚN (không phải câu hỏi đơn lẻ) —
+// vd "EXERCISE 2: Find the word..." hoặc "Bài tập 2:", "Phần II:". Nhiều đề
+// gồm nhiều exercise/section, MỖI section tự đánh số câu lại từ 1 — nếu
+// không phát hiện ranh giới này, parse() coi tất cả các dòng "1." "2."...
+// trong toàn bộ file là MỘT chuỗi số liên tục, khiến câu "1." của Exercise 2
+// bị nối tiếp/đánh số đè lên câu cuối Exercise 1 (ví dụ đề có 2 exercise x
+// 10 câu = 20 câu thật, nhưng số thứ tự bị dồn/lặp gây nhầm lẫn khi xuất).
+// Match "Exercise N", "Bài tập N", "Phần N" ở ĐẦU DÒNG kèm dấu ':' hoặc hết
+// dòng — cố tình KHÔNG khớp "Bài N:"/"Phần N:" đứng trước 1 câu hỏi đơn lẻ
+// (dạng đó đã được RE_Q xử lý riêng ở trên).
+const RE_SECTION = /^(?:exercise|section|part|bài\s*tập|phần)\s*[IVXLC\d]+\b\s*[:.\-–—]?\s*/i;
+
+// RE_Q_LOOSE: fallback "mờ" — dùng khi RE_Q bắt được quá ít câu (nghi ngờ
+// giáo viên gõ sai chính tả / định dạng lạ, vd "Cua 1", "Bài tập 1:",
+// "Câu số 1:"). Nới lỏng: cho phép chữ đứng trước số bị gõ sai/khác biệt
+// (chấp nhận bất kỳ từ tiếng Việt/không dấu 2-10 ký tự đứng trước số),
+// miễn là theo sau là số + dấu phân cách quen thuộc. Không dùng làm mặc
+// định vì dễ khớp nhầm câu thường — chỉ bật khi RE_Q thất bại hàng loạt.
+const RE_Q_LOOSE = /^[\p{L}]{2,12}\s*(?:tập|số)?\s*\d+\s*[.):\-–—]/iu;
+
+// Kiểm tra tỉ lệ khớp RE_Q trên toàn văn bản; nếu quá thấp mà RE_Q_LOOSE
+// bắt được nhiều hơn hẳn, coi như file dùng định dạng lệch chuẩn.
+function suggestLooseQuestionMatch(lines) {
+  const strict = lines.filter(l => RE_Q.test(l)).length;
+  const loose  = lines.filter(l => RE_Q_LOOSE.test(l)).length;
+  return { strict, loose, shouldSuggestLoose: strict === 0 && loose > 0 };
+}
+
+// RE_ANS: dòng khai báo đáp án rõ ràng
+const RE_ANS = /^(?:answer|đáp\s*án|key|đs|ans|correct|chọn|đáp|da)[\s:.\-–—]+([A-Ea-e])/i;
+
+// RE_MARKER: chữ cái đáp án đứng độc lập (A. / B) / C– / D hoặc chỉ "A")
+// Chấp nhận thêm dấu "–" "—" và khoảng trắng giữa chữ và dấu
+const RE_MARKER = /^[A-Ea-e]\s*[.)\-–—]?\s*$/;
+
+// OPT_SEP: tập ký tự phân cách đáp án được chấp nhận sau chữ cái A-E — dùng
+// chung cho mọi regex nhận diện "đầu 1 dòng đáp án" trong file này. Trước
+// đây rải rác khắp nơi mỗi chỗ tự viết literal [\.\)] (chỉ chấp nhận "A."
+// và "A)"), khiến các biến thể giáo viên hay gõ như "A-", "A–", "a/" bị bỏ
+// sót ở NHIỀU nơi cùng lúc dù chỉ cần sửa 1 hằng số. OPT_SEP không gồm
+// khoảng trắng/không có gì (trường hợp "A text" không dấu, hiếm gặp và dễ
+// khớp nhầm với chữ hoa đầu câu, nên không đưa vào đây).
+const OPT_SEP = '.\\)\\-–—/';
+// RE_OPT_LINE: 1 dòng bắt đầu bằng marker đáp án hợp lệ (yêu cầu có nội
+// dung theo sau marker, tương đương pattern cũ /^[A-Ea-e][\.\)]\s*\S/ nhưng
+// mở rộng thêm '-', '–', '—', '/' làm dấu phân cách.
+const RE_OPT_LINE = new RegExp('^[A-Ea-e][' + OPT_SEP + ']\\s*\\S');
+
+const dz = document.getElementById('dropZone');
+const fi = document.getElementById('fileInput');
+dz.addEventListener('click', () => fi.click());
+dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag'); handleFiles(e.dataTransfer.files); });
+fi.addEventListener('change', e => handleFiles(e.target.files));
+
+// Đồng bộ kích thước viền SVG "chạy" (marching ants) với kích thước thực tế
+// của .drop-zone. SVG không tự nhận % width/height đáng tin cậy trên mọi
+// WebView Android, và dùng viewBox tỉ lệ cố định sẽ làm méo góc bo tròn khi
+// tỉ lệ khung hình thực tế khác 1:1 — nên set trực tiếp bằng pixel đo được.
+// Chạy lại khi resize/xoay màn hình vì .drop-zone có thể đổi kích thước.
+function syncDzBorderSize() {
+  const rect = dz.querySelector('.dz-border-svg rect');
+  if (!rect) return;
+  const w = dz.clientWidth, h = dz.clientHeight;
+  if (!w || !h) return;
+  rect.setAttribute('width', Math.max(0, w - 4));
+  rect.setAttribute('height', Math.max(0, h - 4));
+}
+syncDzBorderSize();
+window.addEventListener('resize', syncDzBorderSize);
+window.addEventListener('orientationchange', () => setTimeout(syncDzBorderSize, 100));
+// ResizeObserver bắt luôn cả trường hợp kích thước đổi không do resize cửa
+// sổ (ví dụ nội dung phía trên đổi chiều cao, đẩy .drop-zone dịch xuống).
+if (window.ResizeObserver) {
+  new ResizeObserver(syncDzBorderSize).observe(dz);
+}
+
+let allQ = [];
+let currentZip = null;
+let ocrImages = []; // [{name, blob, url, size, selected}] (DOCX/ảnh: blob/url có sẵn)
+                     // PDF scan dùng lazy entry: {name, size, selected, pdfDoc, pageNum,
+                     //   thumbBlob, url(=thumb url, chỉ để hiển thị), fullBlob:null}
+let currentPdfDoc = null; // giữ tham chiếu PDFDocumentProxy để render trang theo yêu cầu (lazy)
+
+// Render thumbnail PDF theo lô — PDF scan 50+ trang nếu render hết 1 lần sẽ
+// đứng hình trên máy yếu dù đã yield giữa các trang. Chỉ render trước
+// PDF_THUMB_BATCH trang, người dùng bấm "Tải thêm trang" để render tiếp.
+const PDF_THUMB_SCALE = 0.35; // chỉ đủ để xem trước, nhẹ — vài chục KB/trang
+const PDF_THUMB_BATCH = 8;
+let pdfThumbState = null; // { pdfDoc, numPages, nextPage } | null khi không phải PDF scan
+
+// ── Auto-save / LocalStorage ──────────────────────────────────────────────────
+const LS_KEY = 'learnsy_quiz_draft';
+
+function saveToLocalStorage() {
+  try {
+    // Chỉ lưu dữ liệu thuần (không lưu Blob/URL)
+    const payload = allQ.map(q => ({
+      text: q.text,
+      opts: q.opts.map(o => ({ key: o.key, text: o.text, u: o.u, b: o.b, s: o.s })),
+      ans:  q.ans,
+      how:  q.how,
+      source: q.source,
+    }));
+    localStorage.setItem(LS_KEY, JSON.stringify({ ts: Date.now(), qs: payload }));
+  } catch (e) {
+    // localStorage đầy hoặc bị chặn — bỏ qua, không làm gián đoạn luồng chính
+  }
+}
+
+function loadFromLocalStorage() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (!raw) return null;
+    const { ts, qs } = JSON.parse(raw);
+    if (!Array.isArray(qs) || !qs.length) return null;
+    // Không khôi phục nếu bản nháp quá cũ (> 7 ngày)
+    if (Date.now() - ts > 7 * 24 * 60 * 60 * 1000) { localStorage.removeItem(LS_KEY); return null; }
+    return { ts, qs };
+  } catch (e) { return null; }
+}
+
+function clearLocalStorage() {
+  try { localStorage.removeItem(LS_KEY); } catch (e) {}
+}
+
+// Hiện banner khôi phục nếu có bản nháp — trì hoãn việc chèn DOM tới sau
+// frame vẽ đầu tiên (rAF) thay vì chèn ngay lúc script parse. Khi thoát app
+// rồi mở lại, WebView Android (đặc biệt MIUI) đôi khi phục hồi trang từ
+// trạng thái "đóng băng" và một reflow lớn ngay tức khắc (như insertBefore
+// đẩy cả dropzone xuống) có thể trùng vào khung hình chưa kịp composite
+// xong, gây 1 frame nhiễu/vỡ hình thoáng qua. Đợi rAF giúp trình duyệt vẽ
+// xong bố cục ổn định trước, rồi mới chèn banner.
+(function checkDraft() {
+  const draft = loadFromLocalStorage();
+  if (!draft) return;
+  requestAnimationFrame(() => {
+  const age = Math.round((Date.now() - draft.ts) / 60000); // phút
+  const ageStr = age < 60 ? `${age} phút trước` : `${Math.round(age/60)} giờ trước`;
+
+  const banner = document.createElement('div');
+  banner.id = 'draftBanner';
+  banner.className = 'draft-banner';
+  banner.innerHTML = `
+    <span class="draft-banner-msg">${ICONS.save} Có bản nháp chưa lưu từ <strong>${ageStr}</strong> — ${draft.qs.length} câu</span>
+    <button class="draft-btn draft-btn-restore" onclick="restoreDraft()">${ICONS.undo} Khôi phục</button>
+    <button class="draft-btn draft-btn-discard" onclick="discardDraft()">${ICONS.x} Xoá</button>
+  `;
+  document.body.insertBefore(banner, document.getElementById('dropZone').nextSibling);
+  });
+})();
+
+function restoreDraft() {
+  const draft = loadFromLocalStorage();
+  if (!draft) return;
+  allQ = draft.qs;
+  document.getElementById('draftBanner')?.remove();
+  render(allQ);
+}
+
+function discardDraft() {
+  clearLocalStorage();
+  document.getElementById('draftBanner')?.remove();
+}
+
+function isImageFile(f) {
+  return /\.(jpe?g|png|heic|heif)$/i.test(f.name||'') || /^image\//.test(f.type||'');
+}
+
+function isPdfFile(f) {
+  return /\.pdf$/i.test(f.name||'') || f.type === 'application/pdf';
+}
+
+// Single entry point for both click-to-browse and drag-drop. A batch of
+// one-or-more images (jpg/png/heic, e.g. several photos of exam pages)
+// goes straight to the OCR flow; anything else falls back to the
+// original single-file .docx flow.
+function handleFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+  if (files.every(isImageFile)) goImages(files);
+  else if (isPdfFile(files[0])) goPdf(files[0]);
+  else go(files[0]);
+}
+
+function resetUiForNewFile() {
+  ['stats','warnBox','outputBox','actions','qPreview','tabRow','outLabel','ocrSection'].forEach(hideEl);
+  ocrImages.forEach(im => im.url && URL.revokeObjectURL(im.url));
+  ocrImages = [];
+  allQ = [];
+  currentZip = null;
+  currentPdfDoc = null; // bỏ tham chiếu PDF cũ — cho phép GC giải phóng
+  pdfThumbState = null;
+}
+
+async function go(file) {
+  showEl('progress');
+  setIconText('progress', 'loader', 'Đang đọc file...');
+  resetUiForNewFile();
+  try {
+    await loadScriptOnce(LIB_URLS.jszip, (pct) => {
+      setIconText('progress', 'loader', pct == null ? 'Đang đọc file...' : `Đang đọc file... ${pct}%`);
+    });
+    const buf = await file.arrayBuffer();
+    const zip = await JSZip.loadAsync(buf);
+    currentZip = zip;
+    const xmlStr = await zip.file('word/document.xml').async('string');
+    const doc = new DOMParser().parseFromString(xmlStr, 'application/xml');
+    const numbering = await loadNumberingDefs(zip);
+    hideEl('progress');
+    const paras = readParas(doc, numbering);
+    const lines = expandParas(paras);
+    allQ = parse(lines, 'text');
+    render(allQ);
+    detectImages(zip); // best-effort; never blocks main result
+  } catch(e) {
+    const p = document.getElementById('progress');
+    p.style.display = 'block';
+    setIconText(p, 'xCircle', e.message);
+  }
+}
+
+// Direct image upload (no docx) — converts HEIC to JPEG if needed, then
+// drops straight into the same OCR section used for images found inside
+// a docx. No text-based parsing happens here since there's no document.xml.
+async function goImages(files) {
+  showEl('progress');
+  setIconText('progress', 'loader', 'Đang xử lý ảnh...');
+  resetUiForNewFile();
+  const prog = document.getElementById('progress');
+  try {
+    const loaded = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      let blob = f, name = f.name || `image${i+1}`;
+      const looksHeic = /\.(heic|heif)$/i.test(name) || /^image\/hei[cf]$/i.test(f.type||'');
+      if (looksHeic) {
+        setIconText(prog, 'loader', `Đang chuyển đổi ảnh HEIC ${i+1}/${files.length}...`);
+        await loadScriptOnce(LIB_URLS.heicTo, (pct) => {
+          setIconText(prog, 'loader', pct == null
+            ? `Đang chuyển đổi ảnh HEIC ${i+1}/${files.length}...`
+            : `Đang chuyển đổi ảnh HEIC ${i+1}/${files.length}... ${pct}%`);
+        });
+        blob = await HeicTo({ blob: f, type: 'image/jpeg', quality: 0.85 });
+        name = name.replace(/\.(heic|heif)$/i, '.jpg');
+      }
+      loaded.push({ name, blob, url: URL.createObjectURL(blob), size: blob.size, selected: true });
+    }
+    hideEl('progress');
+    ocrImages = loaded;
+    document.getElementById('ocrTitle').innerHTML = ICONS.image + ' Ảnh đã chọn';
+    document.getElementById('ocrHint').textContent = 'Bấm Quét để nhận diện chữ trong ảnh. Đã hỗ trợ nhận diện đáp án tô VÀNG; không nhận diện được tô đậm/gạch chân nên câu chưa tô vàng sẽ cần bạn tự điền đáp án.';
+    renderOcrThumbs();
+    showEl('ocrSection');
+  } catch(e) {
+    prog.style.display = 'block';
+    setIconText(prog, 'xCircle', e.message);
+  }
+}
+// ── PDF handler ──────────────────────────────────────────────────────────────
+// Chiến lược 2 bước:
+//   1. Thử getTextContent() — nếu có chữ thật (native PDF) thì parse ngay,
+//      nhanh và chính xác, không cần OCR.
+//   2. Nếu tất cả trang đều trống (scanned PDF) → render từng trang ra
+//      <canvas> → chuyển thành Blob ảnh → đẩy vào ocrImages để người
+//      dùng chọn và quét bằng Tesseract như bình thường.
+async function goPdf(file) {
+  showEl('progress');
+  setIconText('progress', 'loader', 'Đang tải thư viện PDF...');
+  resetUiForNewFile();
+  const prog = document.getElementById('progress');
+
+  try {
+    // ── Bước 0: tải pdf.js (UMD legacy build) qua loadScriptOnce ──
+    // Dùng bản 3.x UMD (.js, không phải .mjs) để load được bằng <script>
+    // thông thường — tránh vấn đề CORS với dynamic import() của .mjs trên
+    // một số host/browser. Sau khi load xong, thư viện tự đăng ký vào
+    // window.pdfjsLib.
+    if (!window.pdfjsLib) {
+      setIconText(prog, 'loader', 'Đang tải pdf.js...');
+      await loadScriptOnce(LIB_URLS.pdfjs, (pct) => {
+        setIconText(prog, 'loader', pct == null ? 'Đang tải pdf.js...' : `Đang tải pdf.js... ${pct}%`);
+      });
+    }
+    const pdfjsLib = window.pdfjsLib;
+    if (!pdfjsLib) throw new Error('Không load được pdf.js — kiểm tra kết nối mạng.');
+
+    // Chỉ định worker cùng version để tránh "fake worker" (chạy chậm)
+    // Chỉ cần set 1 lần — worker tự cache trong service worker / memory
+    if (!pdfjsLib._workerSet) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = LIB_URLS.pdfjsWorker;
+      pdfjsLib._workerSet = true;
+    }
+
+    setIconText(prog, 'loader', 'Đang đọc PDF...');
+    const buf = await file.arrayBuffer();
+    const pdfDoc = await pdfjsLib.getDocument({ data: buf }).promise;
+    currentPdfDoc = pdfDoc; // giữ lại để render lazy từng trang khi người dùng bấm "Quét"
+    const numPages = pdfDoc.numPages;
+
+    // ── Bước 1: thử trích xuất text native ──────────────────────────────
+    // Ghép items theo tọa độ x/y thay vì chỉ nối chuỗi thô —
+    // tránh lỗi "T u   t h ế" (mỗi ký tự là 1 item riêng do kerning PDF)
+    // và tránh câu hỏi bị cắt giữa trang (không chèn '\n' trang mới).
+    setIconText(prog, 'loader', `Đang trích xuất chữ (${numPages} trang)...`);
+    let totalChars = 0;
+    const allLines = []; // gom dòng từ tất cả trang vào 1 mảng phẳng
+
+    // pdf.js getTextContent() KHÔNG trả về màu fill của text (đây là graphics
+    // state, tách biệt khỏi text content stream). Nhiều đề thi đánh dấu đáp
+    // án đúng bằng màu chữ (đỏ) chứ không bold/underline — nếu bỏ qua signal
+    // này thì toàn bộ PDF sẽ "Chưa xác định" đáp án. Để lấy màu, ta phải tự
+    // duyệt operator list (getOperatorList) và track graphics state
+    // (save/restore/transform = CTM, setTextMatrix = Tm) để tính ra đúng vị
+    // trí x,y mà mỗi showText() vẽ — sau đó dùng x,y đó làm khoá để khớp lại
+    // với từng item của getTextContent() (cùng hệ tọa độ cuối).
+    // Regex nhận diện font đậm từ tên font pdf.js (item.fontName). Mở rộng so
+    // với bản cũ (chỉ bold|Black|Heavy) để bắt thêm SemiBold, Demibold,
+    // Medium, và các mức đậm dạng số W6-W9 (chuẩn đặt tên font CJK/Adobe,
+    // ví dụ "NotoSansCJK-W6"). Không bắt "W1"-"W5" vì đó là các mức
+    // thin/light/regular, không phải đậm.
+    const RE_BOLD_FONT = /bold|black|heavy|semibold|demibold|medium|w[6-9]/i;
+    function mat6Mul(m1, m2) {
+      // Compose theo quy ước pdf.js: áp m1 trước rồi m2 (m1 * m2)
+      return [
+        m1[0]*m2[0] + m1[1]*m2[2],
+        m1[0]*m2[1] + m1[1]*m2[3],
+        m1[2]*m2[0] + m1[3]*m2[2],
+        m1[2]*m2[1] + m1[3]*m2[3],
+        m1[4]*m2[0] + m1[5]*m2[2] + m2[4],
+        m1[4]*m2[1] + m1[5]*m2[3] + m2[5],
+      ];
+    }
+    async function buildColorPosMap(page) {
+      // Trả về mảng các điểm {x, y} (vị trí bắt đầu vẽ text) nơi màu fill
+      // KHÁC đen/xám-đen (tức được tô màu có chủ đích). Trước đây dùng Map
+      // khớp CHÍNH XÁC chuỗi tọa độ làm tròn 1 số lẻ — nhưng getOperatorList()
+      // và getTextContent() đôi khi tính toán tọa độ lệch nhau vài pixel (do
+      // kerning/word-spacing được xử lý hơi khác giữa 2 luồng), khiến nhiều
+      // từ tô màu bị bỏ sót vì khớp chuỗi thất bại dù vị trí thực tế rất gần
+      // nhau. Dùng danh sách điểm + so khớp theo khoảng cách (dung sai vài
+      // pixel) ở isNearColoredPoint() bên dưới để ổn định hơn.
+      const points = [];
+      try {
+        const opList = await page.getOperatorList();
+        const OPS = pdfjsLib.OPS;
+        const opNames = {};
+        for (const k in OPS) opNames[OPS[k]] = k;
+        let curColor = [0, 0, 0];
+        let curTm = [1, 0, 0, 1, 0, 0];
+        let ctm = [1, 0, 0, 1, 0, 0];
+        const ctmStack = [];
+        for (let k = 0; k < opList.fnArray.length; k++) {
+          const name = opNames[opList.fnArray[k]];
+          const args = opList.argsArray[k];
+          if (name === 'save') {
+            ctmStack.push(ctm.slice());
+          } else if (name === 'restore') {
+            ctm = ctmStack.pop() || ctm;
+          } else if (name === 'transform') {
+            ctm = mat6Mul(args, ctm);
+          } else if (name === 'setFillRGBColor') {
+            curColor = args.slice(0, 3);
+          } else if (name === 'setFillGray') {
+            const g = args[0] * 255;
+            curColor = [g, g, g];
+          } else if (name === 'setFillColorN' || name === 'setFillColor') {
+            // Không phải RGB/Gray đơn giản (CMYK/ICC/pattern) — coi như "có màu"
+            // vì các đề dùng RGB đỏ thường đi qua setFillRGBColor, trường hợp
+            // này hiếm; đánh dấu khác-đen để không bỏ sót.
+            curColor = [1, 0, 0];
+          } else if (name === 'setTextMatrix') {
+            curTm = args;
+          } else if (name === 'showText') {
+            const isColored = !(
+              Math.round(curColor[0]) === 0 &&
+              Math.round(curColor[1]) === 0 &&
+              Math.round(curColor[2]) === 0
+            );
+            if (isColored) {
+              const combined = mat6Mul(curTm, ctm);
+              points.push({ x: combined[4], y: combined[5] });
+            }
+          }
+        }
+      } catch (e) {
+        // Nếu structure PDF lạ làm operator-list parse lỗi, bỏ qua màu —
+        // fallback về hành vi cũ (chỉ dùng bold), không làm crash việc đọc PDF.
+      }
+      return points;
+    }
+
+    // So khớp tọa độ item (từ getTextContent) với danh sách điểm tô màu (từ
+    // getOperatorList) bằng khoảng cách Euclide thay vì khớp chuỗi tuyệt đối —
+    // dung sai mặc định ±2.5px đủ để hấp thụ sai số kerning/word-spacing giữa
+    // 2 luồng, nhưng vẫn đủ nhỏ để không nhận nhầm điểm tô màu của từ kế bên.
+    function isNearColoredPoint(points, x, y, tolerance = 2.5) {
+      const tol2 = tolerance * tolerance;
+      for (const p of points) {
+        const dx = p.x - x, dy = p.y - y;
+        if (dx * dx + dy * dy <= tol2) return true;
+      }
+      return false;
+    }
+
+    // ── Phát hiện layout chia cột (multi-column) ────────────────────────────
+    // Đề thi hay chia trang thành 2 (đôi khi 3) cột để tiết kiệm giấy. Nếu
+    // chỉ sort theo Y rồi X như cũ, dòng ở cột 1 và dòng cùng cao độ Y ở cột 2
+    // bị gộp chung 1 hàng → nội dung 2 cột bị trộn lẫn. Để tránh, ta phân
+    // tích mật độ tọa độ X khởi đầu (left-edge) của các item trên trang: nếu
+    // tách thành 2 cụm rõ rệt cách nhau một khoảng trống đủ lớn (gutter) thì
+    // coi là layout chia cột, và xử lý (sort Y rồi build rows) RIÊNG cho từng
+    // cột trước khi nối các cột lại theo thứ tự trái → phải.
+    function detectColumns(items, pageWidth) {
+      if (items.length < 8) return null; // quá ít item, không đủ tin cậy để tách cột
+      const xs = items.map(it => it.transform[4]).sort((a, b) => a - b);
+      // Tìm khoảng trống (gap) lớn nhất giữa 2 x liên tiếp, loại bỏ phần đuôi
+      // 5% hai đầu để tránh outlier (số trang, header lệch...) làm sai lệch.
+      const lo = Math.floor(xs.length * 0.05), hi = Math.ceil(xs.length * 0.95);
+      let bestGap = 0, bestAt = -1;
+      for (let i = lo + 1; i < hi; i++) {
+        const gap = xs[i] - xs[i - 1];
+        if (gap > bestGap) { bestGap = gap; bestAt = i; }
+      }
+      // Gutter (khoảng trắng giữa 2 cột) hợp lệ phải đủ rộng so với trang
+      // (>= 8% bề rộng trang) — nếu không, đó chỉ là khoảng cách từ thường,
+      // không phải ranh giới cột.
+      if (bestAt < 0 || bestGap < pageWidth * 0.08) return null;
+      const splitX = (xs[bestAt - 1] + xs[bestAt]) / 2;
+      const colA = items.filter(it => it.transform[4] < splitX);
+      const colB = items.filter(it => it.transform[4] >= splitX);
+      // Cả 2 cụm phải đủ lớn (>= 15% tổng số item mỗi bên) — tránh việc 1-2
+      // item lạc (vd: số trang góc phải) bị hiểu nhầm thành "cột 2".
+      const minSide = items.length * 0.15;
+      if (colA.length < minSide || colB.length < minSide) return null;
+      return [colA, colB];
+    }
+
+    // Sort + gom rows cho 1 nhóm item (dùng chung cho cả single-column và
+    // từng cột riêng khi phát hiện multi-column).
+    function sortIntoRows(items) {
+      const sorted = [...items].sort((a, b) => {
+        const dy = b.transform[5] - a.transform[5];
+        if (Math.abs(dy) > 3) return dy;
+        return a.transform[4] - b.transform[4];
+      });
+      const rows = [];
+      for (const item of sorted) {
+        const y = item.transform[5];
+        const h = Math.max(item.height || 0, item.fontSize || 10, 6);
+        const last = rows[rows.length - 1];
+        if (last && Math.abs(last.y - y) <= h * 0.6) {
+          last.items.push(item);
+        } else {
+          rows.push({ y, items: [item] });
+        }
+      }
+      return rows;
+    }
+
+    for (let i = 1; i <= numPages; i++) {
+      setIconText(prog, 'loader', `Đang trích xuất chữ trang ${i}/${numPages}...`);
+      // Nhường quyền điều khiển UI giữa các trang (tránh freeze với đề dài)
+      await new Promise(r => setTimeout(r, 0));
+      const page = await pdfDoc.getPage(i);
+      // includeMarkedContent: false — chỉ lấy text items, bỏ marked content
+      const [content, colorPosMap] = await Promise.all([
+        page.getTextContent({ includeMarkedContent: false }),
+        buildColorPosMap(page),
+      ]);
+      const items = content.items.filter(it => it.str && it.str.trim());
+      if (!items.length) continue;
+      totalChars += items.reduce((s, it) => s + it.str.replace(/\s/g,'').length, 0);
+
+      // Phát hiện chia cột trước khi gom hàng theo Y. Nếu có, xử lý (sort Y +
+      // group rows) RIÊNG cho từng cột rồi nối kết quả theo thứ tự cột trái
+      // → phải — tránh dòng cột 1 và cột 2 cùng cao độ Y bị gộp chung 1 hàng.
+      const pageWidth = page.getViewport({ scale: 1 }).width;
+      const columns = detectColumns(items, pageWidth);
+      const rows = columns
+        ? columns.flatMap(colItems => sortIntoRows(colItems))
+        : sortIntoRows(items);
+
+      // Mỗi row → 1 dòng text (+ runs theo màu, để detect đáp án tô màu chữ)
+      // + metadata font (bold) cho detect đáp án
+      for (const row of rows) {
+        row.items.sort((a, b) => a.transform[4] - b.transform[4]);
+        let line = '';
+        let prevRight = null;
+        const runs = []; // [{text, b, colored}] — gộp các item liên tiếp cùng (bold,colored)
+
+        for (const item of row.items) {
+          const x  = item.transform[4];
+          const y  = item.transform[5];
+          const str = item.str;
+
+          // fontSize thực tế = |scaleY| từ transform matrix (index 3)
+          const fz = Math.abs(item.transform[3]) || item.fontSize || 10;
+
+          // Chiều rộng item: ưu tiên item.width nếu hợp lệ (> fz/4 per char),
+          // fallback sang fz * 0.55 * len — tránh item.width=0 của font Unicode
+          const expectedMinW = str.length * fz * 0.25;
+          const w = (item.width > expectedMinW) ? item.width : str.length * fz * 0.55;
+
+          // Ngưỡng space: đo thực tế trên nhiều mẫu PDF cho thấy khoảng cách
+          // giữa 2 từ thường ~0.25×fontSize (không phải 0.30 như trước) — với
+          // ngưỡng 0.30 thì gap thật bị loại, gây dính chữ ("chiếnđấu",
+          // "D.Phát hiện"). Hạ xuống 0.20 để bắt đúng gap thật mà vẫn đủ nhỏ
+          // để không tách lẫn ký tự trong cùng 1 từ (gap đó luôn ≤ 0).
+          const spaceThresh = fz * 0.20;
+
+          // pdf.js getTextContent() chỉ trả về fontName (alias nội bộ như
+          // "g_d0_f1", không phải tên font thật / FontDescriptor), nên KHÔNG
+          // có field fontWeight số để đọc trực tiếp ở đây — phải dựa vào tên
+          // font. Một số PDF subset tên font dạng "AAAAAA+ArialMT" (sau dấu
+          // "+") hoặc dùng các mức đậm khác ngoài "bold" như "SemiBold",
+          // "Medium", "W6"-"W9" (font CJK/Adobe) — mở rộng regex để bắt thêm
+          // các trường hợp này, không chỉ bold/black/heavy như trước.
+          const itemBold = !!(item.fontName && RE_BOLD_FONT.test(item.fontName));
+          // Khớp màu qua khoảng cách Euclide (dung sai ±2.5px) thay vì khớp
+          // chuỗi tọa độ tuyệt đối — xem isNearColoredPoint() / buildColorPosMap()
+          const itemColored = isNearColoredPoint(colorPosMap, x, y);
+
+          let prefix = '';
+          if (prevRight !== null && x - prevRight > spaceThresh) prefix = ' ';
+          line += prefix + str;
+          prevRight = x + w;
+
+          const lastRun = runs[runs.length - 1];
+          if (lastRun && lastRun.b === itemBold && lastRun.colored === itemColored) {
+            lastRun.text += prefix + str;
+          } else {
+            runs.push({ text: prefix + str, b: itemBold, colored: itemColored });
+          }
+        }
+        line = line.trim().replace(/\s{2,}/g, ' ');
+        if (!line) continue;
+        // Bỏ khoảng trắng thừa đầu/cuối run đầu/cuối tương ứng với trim() ở trên
+        if (runs.length) {
+          runs[0].text = runs[0].text.replace(/^\s+/, '');
+          runs[runs.length - 1].text = runs[runs.length - 1].text.replace(/\s+$/, '');
+        }
+
+        // Phát hiện bold từ fontName (pdf.js: font chứa "Bold"/"Black"/"Heavy"
+        // hoặc các mức đậm khác — xem RE_BOLD_FONT)
+        const isBold = row.items.some(it =>
+          it.fontName && RE_BOLD_FONT.test(it.fontName)
+        );
+        allLines.push({ text: line, bold: isBold, runs });
+      }
+    }
+
+    const isNative = totalChars > 20;
+    if (isNative) {
+      hideEl('progress');
+      // Lọc header/footer lặp (số trang, tên trường): dòng xuất hiện > 40% số trang
+      // và ngắn (< 60 ký tự) thường là noise — loại bỏ trước khi parse
+      if (numPages >= 3) {
+        const lineFreq = {};
+        for (const l of allLines) {
+          const key = l.text.trim().toLowerCase();
+          if (key.length < 60 && key.length > 0) lineFreq[key] = (lineFreq[key] || 0) + 1;
+        }
+        const threshold = Math.max(2, Math.round(numPages * 0.4));
+        const noiseSet = new Set(Object.entries(lineFreq).filter(([,v]) => v >= threshold).map(([k]) => k));
+        if (noiseSet.size > 0 && noiseSet.size <= 10) { // chỉ lọc khi có ít noise items (tránh lọc nhầm đề ngắn)
+          for (let k = allLines.length - 1; k >= 0; k--) {
+            if (noiseSet.has(allLines[k].text.trim().toLowerCase())) allLines.splice(k, 1);
+          }
+        }
+      }
+
+      // Dòng khai báo đáp án rõ (Đáp án: D / Answer: B / ĐA: C...)
+      // → nhận diện ngay tại đây để gán vào câu hỏi trước đó
+      const RE_ANS_INLINE = /^(?:đáp\s*án|answer|key|đs|ans|da|correct|chọn)[\s:.\-–—]+([A-Ea-e])/i;
+      // Pattern: "38. ... D" — số thứ tự + text + chữ cái cuối → đáp án inline
+      const RE_TRAILING_ANS = /^\d+[.)].+\s([A-Ea-e])\s*\.?\s*$/;
+
+      // ── PDF-specific pre-processing: rejoin wrapped lines & strip page headers ──
+      // pdf.js cắt dòng theo chiều rộng trang — câu hỏi dài bị split thành 2+ rows.
+      // Chạy rejoin TRƯỚC expandParas để tránh phần tiếp theo bị drop khi parse().
+
+      // Bước 0: lọc pattern "x/5", "1/5", "ÔN TẬP KTCK2" v.v. (header/footer rõ ràng)
+      const RE_PAGE_HEADER = /^\d+\/\d+$|^ôn\s*tập\b/i;
+      for (let k = allLines.length - 1; k >= 0; k--) {
+        if (RE_PAGE_HEADER.test(allLines[k].text.trim())) allLines.splice(k, 1);
+      }
+
+      // Bước 1: rejoin — nối dòng continuation vào dòng trước
+      // Dòng được coi là "bắt đầu unit mới" nếu là câu hỏi (RE_Q) hoặc đáp án [A-E].
+      // Mọi dòng khác là continuation → ghép vào dòng trước.
+      const RE_OPT_START = RE_OPT_LINE;
+      const rejoinedLines = [];
+      for (const l of allLines) {
+        const t = l.text.trim();
+        if (!t) continue;
+        // runs mặc định = [{text: toàn dòng, colored:false}] nếu trang/dòng nào
+        // đó không có runs (an toàn dự phòng) — nhưng bình thường luôn có runs
+        // thật từ buildColorPosMap ở bước trích xuất.
+        const lRuns = (l.runs && l.runs.length) ? l.runs : [{ text: l.text, b: l.bold, colored: false }];
+        const isNewUnit = RE_Q.test(t) || RE_OPT_START.test(t) || RE_ANS.test(t);
+        if (!isNewUnit && rejoinedLines.length > 0) {
+          const prev = rejoinedLines[rejoinedLines.length - 1];
+          // Không ghép nếu dòng trước đã kết thúc bằng "?" (câu hỏi hoàn chỉnh)
+          // hoặc nếu dòng hiện tại bắt đầu bằng chữ hoa (có thể là câu mới không có số)
+          const prevEndsQuestion = prev.text.trim().endsWith('?');
+          if (prevEndsQuestion) {
+            rejoinedLines.push({ text: t, bold: l.bold, runs: lRuns });
+          } else {
+            prev.text += ' ' + t;
+            // Thêm 1 run "space" trung tính rồi nối tiếp runs của dòng mới,
+            // để vị trí đáp án màu nằm cuối dòng (VD: "...? D.") vẫn giữ được
+            // signal colored khi 2 dòng pdf.js bị tách do wrap.
+            prev.runs.push({ text: ' ', b: false, colored: false });
+            prev.runs.push(...lRuns);
+          }
+        } else {
+          rejoinedLines.push({ text: t, bold: l.bold, runs: lRuns });
+        }
+      }
+
+      const lines = rejoinedLines.map(({ text, runs }) => ({
+        text,
+        runs: runs.map(r => ({ text: r.text, u:false, b: !!r.b, s:false, colored: !!r.colored, highlighted:false })),
+        all_s: false,
+      }));
+      const expanded = expandParas(lines);
+      allQ = parse(expanded, 'pdf');
+
+      // Post-process: thử detect đáp án từ bold font hoặc pattern phổ biến trong PDF
+      // Với PDF không có highlight/underline, nhưng đáp án in đậm → dùng bold signal
+      // Bước A: Xây dựng answer-key map từ dòng "Đáp án:" / bảng đáp án cuối đề
+      // Ví dụ: "1. D  2. A  3. C ..." hoặc "1-D 2-A ..."
+      const RE_GRID = /(?:^|\s)(\d+)\s*[.\-–—:)]\s*([A-Ea-e])(?=\s|$)/g;
+      const answerGrid = {};
+      for (let k = allLines.length - 1; k >= Math.max(0, allLines.length - 60); k--) {
+        let m;
+        while ((m = RE_GRID.exec(allLines[k].text)) !== null) {
+          const qNum = parseInt(m[1], 10);
+          if (qNum >= 1 && qNum <= allQ.length + 5) {
+            answerGrid[qNum] = m[2].toUpperCase();
+          }
+        }
+        RE_GRID.lastIndex = 0;
+      }
+      allQ.forEach((q, idx) => {
+        if (!q.ans && answerGrid[idx + 1]) { q.ans = answerGrid[idx + 1]; q.how = 'text'; }
+      });
+
+      // Bước B: Bold signal + trailing-answer pattern
+      for (const q of allQ) {
+        if (q.ans) continue;
+        let bestKey = null;
+        // Kiểm tra đáp án trailing: "1. Câu hỏi D" (chữ cái cuối dòng)
+        const qLineText = allLines.find(l => RE_Q.test(l.text) && l.text.includes(q.text.slice(0, 15)));
+        if (qLineText) {
+          const trailM = qLineText.text.match(/\s([A-Ea-e])\s*\.?\s*$/);
+          if (trailM) { q.ans = trailM[1].toUpperCase(); q.how = 'text'; continue; }
+        }
+        // Bold option
+        for (const o of q.opts) {
+          const srcLine = allLines.find(l => {
+            const t = l.text.trim();
+            return (t === o.key + '. ' + o.text || t.startsWith(o.key + '. ' + o.text.slice(0, Math.min(12, o.text.length))));
+          });
+          if (srcLine && srcLine.bold) { bestKey = o.key; break; }
+        }
+        if (bestKey) { q.ans = bestKey; q.how = 'bold'; }
+      }
+
+      render(allQ);
+      return;
+    }
+
+    // ── Bước 2: Scanned PDF → chỉ render ảnh THUMBNAIL nhỏ cho từng trang ──
+    // (KHÔNG render full-res ngay — tránh OOM crash trên đề 15-20+ trang).
+    // Ảnh full-res (SCALE_FULL) chỉ được render LAZY, đúng lúc OCR thật sự
+    // chạy trên trang đó (xem renderPageFull()), và được revoke ngay sau khi
+    // dùng xong — xem runOcr().
+    // Cũng KHÔNG render hết numPages thumbnail cùng lúc — PDF scan 50+ trang
+    // vẫn có thể đứng máy dù đã yield giữa các trang trên thiết bị yếu, nên
+    // chỉ render lô đầu (PDF_THUMB_BATCH trang) rồi để nút "Tải thêm trang"
+    // (loadMorePdfThumbs) render tiếp theo yêu cầu.
+    setIconText(prog, 'loader', 'PDF dạng scan — đang tạo ảnh xem trước...');
+    ocrImages = [];
+    pdfThumbState = { pdfDoc, numPages, nextPage: 1 };
+    await renderPdfThumbBatch(prog);
+
+    hideEl('progress');
+    document.getElementById('ocrTitle').innerHTML = ICONS.image + ` PDF scan — ${numPages} trang`;
+    document.getElementById('ocrHint').textContent =
+      'PDF này không có lớp chữ — đã render từng trang thành ảnh. Chọn trang muốn quét rồi bấm Quét để nhận diện chữ bằng OCR. Đã hỗ trợ nhận diện đáp án tô VÀNG; không nhận diện được tô đậm/gạch chân nên câu chưa tô vàng sẽ cần bạn tự điền đáp án.';
+    renderOcrThumbs();
+    showEl('ocrSection');
+
+  } catch(e) {
+    prog.style.display = 'block';
+    setIconText(prog, 'xCircle', 'Lỗi đọc PDF: ' + e.message);
+  }
+}
+
+// Render lô tiếp theo của thumbnail PDF (PDF_THUMB_BATCH trang), bắt đầu từ
+// pdfThumbState.nextPage. prog (tuỳ chọn) là phần tử #progress để hiện %
+// — khi gọi từ nút "Tải thêm trang" thì truyền null vì progress bar chính
+// đã ẩn, trạng thái hiện ngay trên nút bấm (xem loadMorePdfThumbs).
+async function renderPdfThumbBatch(prog) {
+  if (!pdfThumbState) return;
+  const { pdfDoc, numPages, nextPage } = pdfThumbState;
+  const end = Math.min(numPages, nextPage + PDF_THUMB_BATCH - 1);
+  for (let i = nextPage; i <= end; i++) {
+    if (prog) {
+      const pct = Math.round((i - nextPage) / (end - nextPage + 1) * 100);
+      setIconText(prog, 'loader', `Đang tạo ảnh xem trước trang ${i}/${numPages}... (${pct}%)`);
+    }
+    // Nhường quyền điều khiển cho UI giữa các trang — tránh màn hình đứng hình
+    await new Promise(r => setTimeout(r, 0));
+
+    const page = await pdfDoc.getPage(i);
+    const vp = page.getViewport({ scale: PDF_THUMB_SCALE });
+
+    const canvas = document.createElement('canvas');
+    canvas.width  = vp.width;
+    canvas.height = vp.height;
+    const ctx = canvas.getContext('2d');
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+
+    // Canvas → Blob JPEG nhỏ, chỉ dùng để hiển thị thumbnail
+    const thumbBlob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.7));
+    const url = URL.createObjectURL(thumbBlob);
+    ocrImages.push({
+      name: `trang_${i}.jpg`, size: thumbBlob.size, selected: true,
+      pdfDoc, pageNum: i, url, blob: null, // blob full-res sẽ được lazy-render khi OCR chạy
+    });
+    // Giải phóng canvas ngay sau mỗi trang
+    canvas.width = 0; canvas.height = 0;
+  }
+  pdfThumbState.nextPage = end + 1;
+}
+
+// Handler cho nút "Tải thêm trang" — render lô tiếp theo rồi vẽ lại lưới
+// thumbnail (renderOcrThumbs sẽ tự ẩn nút khi đã hết trang).
+async function loadMorePdfThumbs() {
+  const btn = document.getElementById('loadMoreBtn');
+  if (!pdfThumbState || btn.disabled) return;
+  btn.disabled = true;
+  const remain = pdfThumbState.numPages - pdfThumbState.nextPage + 1;
+  setIconText(btn, 'loader', `Đang tải thêm... (còn ${remain} trang)`);
+  try {
+    await renderPdfThumbBatch(null);
+    renderOcrThumbs();
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Number formatting helpers for Word auto-numbering (w:numPr) ──────────
+// Many teachers generate "Câu 1.", "A.", "B." via Word's Numbering feature
+// instead of typing the literal characters — in that case <w:t> never
+// contains "Câu 1" or "A." at all, it's purely defined by word/numbering.xml.
+function numToLetter(n) {
+  let s = '';
+  while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
+  return s || 'A';
+}
+function numToRoman(n) {
+  const vals = [[1000,'M'],[900,'CM'],[500,'D'],[400,'CD'],[100,'C'],[90,'XC'],[50,'L'],[40,'XL'],[10,'X'],[9,'IX'],[5,'V'],[4,'IV'],[1,'I']];
+  let s = '';
+  for (const [v, sym] of vals) { while (n >= v) { s += sym; n -= v; } }
+  return s || 'I';
+}
+function formatNumValue(n, numFmt) {
+  switch (numFmt) {
+    case 'upperLetter': return numToLetter(n);
+    case 'lowerLetter': return numToLetter(n).toLowerCase();
+    case 'upperRoman':  return numToRoman(n);
+    case 'lowerRoman':  return numToRoman(n).toLowerCase();
+    case 'bullet':      return '';
+    case 'decimal':
+    default:             return String(n);
+  }
+}
+
+// Parses word/numbering.xml (if present) into a lookup the rest of the code
+// can query while walking paragraphs. Best-effort: any failure here just
+// means numPr-based markers are skipped, never blocks the main parse.
+async function loadNumberingDefs(zip) {
+  const file = zip.file('word/numbering.xml');
+  if (!file) return null;
+  try {
+    const xmlStr = await file.async('string');
+    const ndoc = new DOMParser().parseFromString(xmlStr, 'application/xml');
+    const abstractMap = {};
+    for (const an of ndoc.getElementsByTagNameNS(WNS,'abstractNum')) {
+      const id = an.getAttributeNS(WNS,'abstractNumId') || an.getAttribute('w:abstractNumId');
+      if (id == null) continue;
+      const lvls = {};
+      for (const lvl of an.getElementsByTagNameNS(WNS,'lvl')) {
+        const ilvl = lvl.getAttributeNS(WNS,'ilvl') || lvl.getAttribute('w:ilvl') || '0';
+        const numFmtEl = lvl.getElementsByTagNameNS(WNS,'numFmt')[0];
+        const numFmt = numFmtEl ? (numFmtEl.getAttributeNS(WNS,'val')||numFmtEl.getAttribute('w:val')||'decimal') : 'decimal';
+        const lvlTextEl = lvl.getElementsByTagNameNS(WNS,'lvlText')[0];
+        const lvlText = lvlTextEl ? (lvlTextEl.getAttributeNS(WNS,'val')||lvlTextEl.getAttribute('w:val')||'%1.') : '%1.';
+        const startEl = lvl.getElementsByTagNameNS(WNS,'start')[0];
+        const start = startEl ? (parseInt(startEl.getAttributeNS(WNS,'val')||startEl.getAttribute('w:val'),10) || 1) : 1;
+        lvls[ilvl] = {numFmt, lvlText, start};
+      }
+      abstractMap[id] = lvls;
+    }
+    const numMap = {};
+    for (const num of ndoc.getElementsByTagNameNS(WNS,'num')) {
+      const numId = num.getAttributeNS(WNS,'numId') || num.getAttribute('w:numId');
+      const absEl = num.getElementsByTagNameNS(WNS,'abstractNumId')[0];
+      const absId = absEl ? (absEl.getAttributeNS(WNS,'val')||absEl.getAttribute('w:val')) : null;
+      if (numId != null) numMap[numId] = absId;
+    }
+    return {abstractMap, numMap, counters: {}};
+  } catch (e) {
+    return null;
+  }
+}
+
+// Computes the next marker text (e.g. "1.", "A.") for a given numId+ilvl,
+// advancing its counter. Restarts deeper levels whenever a shallower level
+// of the SAME list advances — mirrors Word's normal multilevel-list
+// behavior, e.g. option lettering A-D restarting at A for every new "Câu N".
+function getNumberingMarker(numbering, numId, ilvl) {
+  const absId = numbering.numMap[numId];
+  if (absId == null) return null;
+  const lvlDef = numbering.abstractMap[absId]?.[ilvl];
+  if (!lvlDef || lvlDef.numFmt === 'bullet') return null;
+
+  for (const k of Object.keys(numbering.counters)) {
+    const [kNumId, kIlvl] = k.split('-');
+    if (kNumId === numId && Number(kIlvl) > Number(ilvl)) delete numbering.counters[k];
+  }
+  const key = numId + '-' + ilvl;
+  numbering.counters[key] = (key in numbering.counters) ? numbering.counters[key] + 1 : lvlDef.start;
+  const numText = formatNumValue(numbering.counters[key], lvlDef.numFmt);
+  return lvlDef.lvlText.replace(/%\d/g, numText);
+}
+
+// ── OMML (Office Math Markup Language, <m:oMath>) → LaTeX chuẩn ──────────
+// Word lưu công thức dưới dạng cây cấu trúc, không phải <w:t> text thường,
+// nên một run-walker thuần sẽ làm rớt mất phân số, lũy thừa, căn, v.v. Đây
+// là bộ "flatten" OOXML → LaTeX (không phải parser MathML đầy đủ, nhưng đủ
+// cho các dạng phổ biến trong đề Toán-Lý-Hóa): \frac{a}{b}, \sqrt[n]{x},
+// x^{2}, x_{i}, \sum_{i}^{n}, \sin(x), \overline{AB}... — để các nền tảng
+// LMS dùng KaTeX/MathJax (Learnsy nếu có hỗ trợ) hiển thị công thức đẹp khi
+// dán vào, thay vì kiểu "toán thô bằng text" (a)/(b) như trước.
+function omChildren(node) {
+  let s = '';
+  for (const c of node.children) s += ommlNode(c);
+  return s;
+}
+
+// Ký tự toán tử nary (∑, ∏, ∫…) → lệnh LaTeX tương ứng. Ký tự lạ không có
+// trong map vẫn được giữ nguyên — không đẹp bằng lệnh LaTeX riêng nhưng
+// vẫn hiển thị được, không làm hỏng công thức.
+const NARY_LATEX = {
+  '∑': '\\sum', '∏': '\\prod', '∫': '\\int', '∬': '\\iint', '∭': '\\iiint',
+  '∮': '\\oint', '⋂': '\\bigcap', '⋃': '\\bigcup', '⊕': '\\bigoplus', '⊗': '\\bigotimes',
+};
+// Tên hàm dựng sẵn của Word (m:fName) → lệnh LaTeX có dấu \ phía trước, để
+// KaTeX/MathJax render đúng kiểu chữ đứng (\sin) thay vì chữ nghiêng như
+// biến số thông thường (s·i·n sẽ bị hiểu là s×i×n nếu để trần).
+const FUNC_LATEX = {
+  sin:'\\sin', cos:'\\cos', tan:'\\tan', cot:'\\cot', sec:'\\sec', csc:'\\csc',
+  ln:'\\ln', log:'\\log', lim:'\\lim', exp:'\\exp', max:'\\max', min:'\\min',
+  gcd:'\\gcd', det:'\\det', arcsin:'\\arcsin', arccos:'\\arccos', arctan:'\\arctan',
+};
+// Ký tự mở/đóng của <m:d> (dấu ngoặc) cần escape khi đưa vào \left..\right —
+// '{' '}' phải escape thành \{ \}, còn chuỗi rỗng (m:val="") là dấu phân
+// định "vô hình" trong OOXML, LaTeX biểu diễn bằng dấu chấm '.'.
+const LATEX_DELIM = { '{': '\\{', '}': '\\}', '': '.' };
+function latexDelim(ch) { return LATEX_DELIM[ch] !== undefined ? LATEX_DELIM[ch] : ch; }
+
+function ommlNode(node) {
+  switch (node.localName) {
+    case 't': return node.textContent || '';
+    case 'rPr': case 'ctrlPr': return '';
+    case 'sSup': {
+      const e = node.getElementsByTagNameNS(MNS,'e')[0];
+      const sup = node.getElementsByTagNameNS(MNS,'sup')[0];
+      return (e?ommlNode(e):'') + '^{' + (sup?ommlNode(sup):'') + '}';
+    }
+    case 'sSub': {
+      const e = node.getElementsByTagNameNS(MNS,'e')[0];
+      const sub = node.getElementsByTagNameNS(MNS,'sub')[0];
+      return (e?ommlNode(e):'') + '_{' + (sub?ommlNode(sub):'') + '}';
+    }
+    case 'sSubSup': {
+      const e = node.getElementsByTagNameNS(MNS,'e')[0];
+      const sub = node.getElementsByTagNameNS(MNS,'sub')[0];
+      const sup = node.getElementsByTagNameNS(MNS,'sup')[0];
+      return (e?ommlNode(e):'') + '_{' + (sub?ommlNode(sub):'') + '}^{' + (sup?ommlNode(sup):'') + '}';
+    }
+    case 'f': {
+      const num = node.getElementsByTagNameNS(MNS,'num')[0];
+      const den = node.getElementsByTagNameNS(MNS,'den')[0];
+      return '\\frac{' + (num?ommlNode(num):'') + '}{' + (den?ommlNode(den):'') + '}';
+    }
+    case 'rad': {
+      // m:radPr/m:degHide đánh dấu căn không hiện chỉ số (căn bậc 2 — phổ
+      // biến nhất); nếu không hide, m:deg chứa chỉ số căn bậc n → \sqrt[n]{}.
+      const radPr = node.getElementsByTagNameNS(MNS,'radPr')[0];
+      const degHideEl = radPr ? radPr.getElementsByTagNameNS(MNS,'degHide')[0] : null;
+      const degHideVal = degHideEl ? (degHideEl.getAttributeNS(MNS,'val')||degHideEl.getAttribute('m:val')||'1') : null;
+      const degHidden = degHideVal != null && degHideVal !== '0' && degHideVal !== 'off' && degHideVal !== 'false';
+      const deg = node.getElementsByTagNameNS(MNS,'deg')[0];
+      const base = node.getElementsByTagNameNS(MNS,'e')[0];
+      const degText = (!degHidden && deg) ? ommlNode(deg).trim() : '';
+      const baseTxt = base ? ommlNode(base) : '';
+      return degText ? '\\sqrt[' + degText + ']{' + baseTxt + '}' : '\\sqrt{' + baseTxt + '}';
+    }
+    case 'd': {
+      const pr = node.getElementsByTagNameNS(MNS,'dPr')[0];
+      let open = '(', close = ')';
+      if (pr) {
+        const b = pr.getElementsByTagNameNS(MNS,'begChr')[0];
+        const c = pr.getElementsByTagNameNS(MNS,'endChr')[0];
+        if (b) open = b.getAttributeNS(MNS,'val') || b.getAttribute('m:val') || open;
+        if (c) close = c.getAttributeNS(MNS,'val') || c.getAttribute('m:val') || close;
+      }
+      const inner = Array.from(node.children).filter(c=>c.localName==='e').map(ommlNode).join(', ');
+      return '\\left' + latexDelim(open) + inner + '\\right' + latexDelim(close);
+    }
+    case 'nary': {
+      const naryPr = node.getElementsByTagNameNS(MNS,'naryPr')[0];
+      let chr = '∑';
+      if (naryPr) {
+        const chrEl = naryPr.getElementsByTagNameNS(MNS,'chr')[0];
+        if (chrEl) chr = chrEl.getAttributeNS(MNS,'val') || chrEl.getAttribute('m:val') || chr;
+      }
+      const latexChr = NARY_LATEX[chr] || chr;
+      const sub = node.getElementsByTagNameNS(MNS,'sub')[0];
+      const sup = node.getElementsByTagNameNS(MNS,'sup')[0];
+      const e = node.getElementsByTagNameNS(MNS,'e')[0];
+      let out = latexChr;
+      if (sub) out += '_{' + ommlNode(sub) + '}';
+      if (sup) out += '^{' + ommlNode(sup) + '}';
+      return out + (e ? ommlNode(e) : '');
+    }
+    case 'func': {
+      const fName = node.getElementsByTagNameNS(MNS,'fName')[0];
+      const e = node.getElementsByTagNameNS(MNS,'e')[0];
+      const fnRaw = fName ? ommlNode(fName).trim() : '';
+      const fnLatex = FUNC_LATEX[fnRaw.toLowerCase()] || fnRaw;
+      return fnLatex + (e?ommlNode(e):'');
+    }
+    case 'limLow': {
+      const e = node.getElementsByTagNameNS(MNS,'e')[0];
+      const lim = node.getElementsByTagNameNS(MNS,'lim')[0];
+      return (e?ommlNode(e):'') + (lim ? '_{' + ommlNode(lim) + '}' : '');
+    }
+    case 'limUpp': {
+      const e = node.getElementsByTagNameNS(MNS,'e')[0];
+      const lim = node.getElementsByTagNameNS(MNS,'lim')[0];
+      return (e?ommlNode(e):'') + (lim ? '^{' + ommlNode(lim) + '}' : '');
+    }
+    case 'bar': {
+      const e = node.getElementsByTagNameNS(MNS,'e')[0];
+      const barPr = node.getElementsByTagNameNS(MNS,'barPr')[0];
+      const posEl = barPr ? barPr.getElementsByTagNameNS(MNS,'pos')[0] : null;
+      const pos = posEl ? (posEl.getAttributeNS(MNS,'val')||posEl.getAttribute('m:val')||'top') : 'top';
+      const inner = e ? ommlNode(e) : '';
+      return pos === 'bot' ? '\\underline{' + inner + '}' : '\\overline{' + inner + '}';
+    }
+    default:
+      return omChildren(node);
+  }
+}
+function ommlToText(node) {
+  try { return ommlNode(node).trim(); } catch (e) { return ''; }
+}
+
+// Reads <w:rPr> (run or paragraph-level) into {u,b,s,colored,highlighted}.
+// colored/highlighted are NEW signals: many đề thi mark the correct answer
+// with red/blue text color or yellow highlight instead of bold/underline.
+function getRunFormatting(rpr, inherit) {
+  if (!rpr) return {u: inherit?.u||false, b: inherit?.b||false, s: inherit?.s||false, colored: inherit?.colored||false, highlighted: inherit?.highlighted||false};
+  let u, b, s, colored=false, highlighted=false;
+  const uEl = rpr.getElementsByTagNameNS(WNS,'u')[0];
+  if (uEl) { const v = uEl.getAttributeNS(WNS,'val')||uEl.getAttribute('w:val')||'single'; u = v !== 'none' && v !== '0'; }
+  else u = inherit?.u || false;
+  b = !!rpr.getElementsByTagNameNS(WNS,'b')[0];
+  s = !!(rpr.getElementsByTagNameNS(WNS,'strike')[0]||rpr.getElementsByTagNameNS(WNS,'dstrike')[0]);
+  const colorEl = rpr.getElementsByTagNameNS(WNS,'color')[0];
+  if (colorEl) {
+    const val = (colorEl.getAttributeNS(WNS,'val')||colorEl.getAttribute('w:val')||'').toLowerCase();
+    colored = !!val && val !== '000000' && val !== 'auto';
+  }
+  const hlEl = rpr.getElementsByTagNameNS(WNS,'highlight')[0];
+  if (hlEl) {
+    const val = (hlEl.getAttributeNS(WNS,'val')||hlEl.getAttribute('w:val')||'').toLowerCase();
+    highlighted = !!val && val !== 'none';
+  }
+  return {u, b, s, colored, highlighted};
+}
+
+// Walks a run-container (a <w:p>, or anything wrapping runs like
+// <w:hyperlink>/<w:ins>) in document order, producing flattened runs.
+// Handles: plain runs (incl. multiple <w:t>/<w:tab>/<w:br> per run),
+// hyperlink/ins/smartTag wrappers (recurse in), del (tracked-deletion —
+// excluded from the final text), and <m:oMath>/<m:oMathPara> equations.
+function walkRunContainer(node, inheritFmt, runsOut) {
+  for (const child of node.children) {
+    const ln = child.localName;
+    if (ln === 'r') {
+      const rpr = child.getElementsByTagNameNS(WNS,'rPr')[0];
+      const fmt = getRunFormatting(rpr, inheritFmt);
+      let text = '';
+      for (const c of child.children) {
+        const cln = c.localName;
+        if (cln === 't') text += c.textContent || '';
+        else if (cln === 'tab') text += '\t';
+        else if (cln === 'br') text += '\n';
+      }
+      if (text) runsOut.push({text, ...fmt});
+    } else if (ln === 'hyperlink' || ln === 'smartTag' || ln === 'ins') {
+      walkRunContainer(child, inheritFmt, runsOut);
+    } else if (ln === 'del') {
+      continue; // tracked deletion: not part of the current text
+    } else if (ln === 'oMath' || ln === 'oMathPara') {
+      const mtext = ommlToText(child);
+      // oMathPara = công thức đứng riêng 1 đoạn (display) trong Word, oMath
+      // = công thức chèn giữa câu (inline) — dùng đúng cặp delimiter LaTeX
+      // tương ứng để KaTeX/MathJax tự nhận diện khi dán vào LMS.
+      if (mtext) {
+        const wrapped = ln === 'oMathPara' ? '\\[' + mtext + '\\]' : '\\(' + mtext + '\\)';
+        runsOut.push({text: wrapped, u:false, b:false, s:false, colored:false, highlighted:false});
+      }
+    }
+  }
+}
+
+// Builds one "line" ({text, runs, all_s}) from a single <w:p>, including
+// the w:numPr → numbering.xml fallback for auto-numbered "Câu N."/"A." that
+// never appear as literal <w:t> text.
+function paraToLine(p, numbering) {
+  const pPr = p.getElementsByTagNameNS(WNS,'pPr')[0];
+  let pFmt = {u:false, b:false, s:false, colored:false, highlighted:false};
+  if (pPr) {
+    const pRpr = pPr.getElementsByTagNameNS(WNS,'rPr')[0];
+    if (pRpr) pFmt = getRunFormatting(pRpr, pFmt);
+  }
+  const runs = [];
+  walkRunContainer(p, pFmt, runs);
+
+  if (pPr && numbering) {
+    const numPr = pPr.getElementsByTagNameNS(WNS,'numPr')[0];
+    if (numPr) {
+      const ilvlEl = numPr.getElementsByTagNameNS(WNS,'ilvl')[0];
+      const numIdEl = numPr.getElementsByTagNameNS(WNS,'numId')[0];
+      const ilvl = ilvlEl ? (ilvlEl.getAttributeNS(WNS,'val')||ilvlEl.getAttribute('w:val')||'0') : '0';
+      const numId = numIdEl ? (numIdEl.getAttributeNS(WNS,'val')||numIdEl.getAttribute('w:val')) : null;
+      if (numId != null) {
+        const marker = getNumberingMarker(numbering, numId, ilvl);
+        const currentText = runs.map(r=>r.text).join('').trim();
+        const alreadyHasMarker = RE_Q.test(currentText) || RE_OPT_LINE.test(currentText);
+        if (marker && !alreadyHasMarker) {
+          runs.unshift({text: marker + ' ', u:false, b:false, s:false, colored:false, highlighted:false});
+        }
+      }
+    }
+  }
+
+  if (!runs.length) return null;
+  const all_s = runs.every(r => r.s);
+  return {text: runs.map(r=>r.text).join(''), runs, all_s};
+}
+
+// Processes a <w:tbl> (teachers very often dump A/B/C/D into a borderless
+// 2x2 or 1x4 table to line them up visually). Cells are walked w:tr → w:tc
+// in document order, which is ALREADY row-major (A,B then C,D) since that's
+// how the table XML itself is structured — the risk is really the OPPOSITE
+// case: cells with no "A."/"B." text at all (the letter is implied purely
+// by column position). For that case we inject A,B,C,D.../letters
+// positionally, but only when the table looks like a plain options block
+// (2-5 short, unmarked cells; not a layout table holding a whole question).
+function processTable(tbl, numbering, out) {
+  // ── Bước 1: đọc tất cả rows & cells ──────────────────────
+  const rows = [];
+  for (const tr of tbl.children) {
+    if (tr.localName !== 'tr') continue;
+    const cells = [];
+    for (const tc of tr.children) {
+      if (tc.localName !== 'tc') continue;
+      const ps = tc.getElementsByTagNameNS(WNS,'p');
+      const cellLines = [];
+      for (const p of ps) {
+        const line = paraToLine(p, numbering);
+        if (line) cellLines.push(line);
+      }
+      if (!cellLines.length) { cells.push(null); continue; }
+      cells.push({
+        text: cellLines.map(l=>l.text).join('\n').trim(),
+        runs: [].concat(...cellLines.map(l=>l.runs)),
+        all_s: cellLines.every(l=>l.all_s),
+        lines: cellLines,
+      });
+    }
+    rows.push(cells);
+  }
+
+  if (!rows.length) return;
+  const numCols = Math.max(...rows.map(r => r.length));
+
+  // ── Bước 2: phân loại loại bảng ──────────────────────────
+  // Dạng A — BẢNG LAYOUT (chia cột nội dung, đề 2 cột):
+  //   numCols >= 2 VÀ có ô dài hoặc có đầu câu hỏi → đọc column-major
+  // Dạng B — BẢNG DỮ LIỆU (bảng biến thiên, số liệu địa lý,...):
+  //   có nhiều hàng, không có câu hỏi/đáp án → giữ nguyên dạng Markdown table
+  // Dạng C — OPTION BLOCK: tất cả ô ngắn, có A/B/C/D → row-major như cũ
+  const flat_row = [];
+  for (const row of rows) for (const cell of row) flat_row.push(cell);
+  const nonEmpty = flat_row.filter(c => c && c.text);
+
+  const hasLongCell   = nonEmpty.some(c => c.text.length > 100);
+  const hasQuestion   = nonEmpty.some(c => RE_Q.test(c.text.split('\n')[0]));
+  const alreadyMarked = nonEmpty.some(c => RE_OPT_LINE.test(c.text));
+  const hasOptionMark = nonEmpty.some(c => /^[A-Ea-e][\.\)]/.test(c.text.trim()));
+
+  // Bảng dữ liệu: nhiều hàng, không có dấu hiệu câu hỏi/đáp án
+  // → convert sang Markdown table để giữ nguyên cấu trúc số liệu
+  const isDataTable = rows.length >= 2
+    && !hasQuestion
+    && !hasOptionMark
+    && !alreadyMarked
+    && numCols >= 2;
+
+  if (isDataTable) {
+    let md = '';
+    rows.forEach((row, rIdx) => {
+      const cells = row.map(c => (c ? c.text.replace(/\n/g, ' ').trim() : ''));
+      md += '| ' + cells.join(' | ') + ' |';
+      if (rIdx === 0) {
+        md += '\n| ' + cells.map(() => '---').join(' | ') + ' |';
+      }
+      if (rIdx < rows.length - 1) md += '\n';
+    });
+    if (md) out.push({ text: md, runs: [{ text: md, u:false, b:false, s:false, colored:false, highlighted:false }], all_s: false });
+    return;
+  }
+
+  const isLayoutTable = numCols >= 2 && (hasLongCell || hasQuestion);
+
+  if (isLayoutTable) {
+    // Column-major: đọc cột trái trước
+    for (let col = 0; col < numCols; col++) {
+      for (const row of rows) {
+        const cell = row[col];
+        if (!cell || !cell.text) continue;
+        for (const line of (cell.lines || [{text: cell.text, runs: cell.runs, all_s: cell.all_s}])) {
+          if (line.text) out.push(line);
+        }
+      }
+    }
+    return;
+  }
+
+  // Dạng C — row-major option block
+  const tooLong = nonEmpty.some(c => c.text.length > 200);
+  if (nonEmpty.length >= 2 && nonEmpty.length <= 5 && !alreadyMarked && !hasQuestion && !tooLong) {
+    const letters = 'ABCDE';
+    let idx = 0;
+    for (const cell of flat_row) {
+      if (!cell || !cell.text) continue;
+      const letter = letters[idx++];
+      if (!letter) continue;
+      out.push({
+        text: letter + '. ' + cell.text,
+        runs: [{text: letter+'. ', u:false, b:false, s:false, colored:false, highlighted:false}, ...cell.runs],
+        all_s: cell.all_s,
+      });
+    }
+  } else {
+    for (const cell of flat_row) {
+      if (!cell || !cell.text) continue;
+      for (const line of (cell.lines || [{text: cell.text, runs: cell.runs, all_s: cell.all_s}])) {
+        if (line.text) out.push(line);
+      }
+    }
+  }
+}
+// Each line: { text, runs:[{text,u,b,s,colored,highlighted}], all_s }
+// Walks the body's DIRECT children in document order (not a flat
+// getElementsByTagName over all <w:p>) so <w:tbl> can be intercepted and
+// handled by processTable() instead of falling through as plain paragraphs.
+function readParas(doc, numbering) {
+  const body = doc.getElementsByTagNameNS(WNS,'body')[0];
+  const out = [];
+  function walk(node) {
+    for (const child of node.children) {
+      const ln = child.localName;
+      if (ln === 'p') {
+        const line = paraToLine(child, numbering);
+        if (line) out.push(line);
+      } else if (ln === 'tbl') {
+        processTable(child, numbering, out);
+      } else if (ln === 'sdt') {
+        // content-control wrapper: actual paragraphs live inside <w:sdtContent>,
+        // a grandchild, not a direct child of <w:sdt> — recurse into that.
+        const sdtContent = [...child.children].find(c => c.localName === 'sdtContent');
+        if (sdtContent) walk(sdtContent);
+      }
+    }
+  }
+  walk(body);
+  return out;
+}
+
+// ─── STEP 2: Expand paragraphs ───────────────────────────
+// Split paragraphs that contain MULTIPLE option markers (inline 2-col layout)
+// Detection: scan runs for SHORT marker runs (≤3 chars: "A.", "B.", "C", "D")
+// Group runs by marker, produce virtual option paragraphs
+
+function expandParas(paras) {
+  const lines = [];
+  for (const p of paras) {
+    // Question detection: also match strikethrough questions (đề cũ)
+    if (RE_Q.test(p.text)) {
+      // Một số đề (đặc biệt bài phát âm/trọng âm dạng "1. A. normal  B. forty
+      // C. world  D. chores") không có nội dung câu hỏi thật — số thứ tự và
+      // đáp án A nằm NGAY trên cùng 1 dòng. Nếu chỉ coi cả dòng là câu hỏi
+      // như trước đây, toàn bộ 4 đáp án sẽ biến mất (bị nuốt vào q.text).
+      // Cách xử lý: tách "N. " ra khỏi phần còn lại, rồi thử split phần còn
+      // lại như một dòng option bình thường — nếu tách ra được ≥2 option,
+      // dùng kết quả đó (giữ dòng "N." làm câu hỏi rỗng); nếu không, coi cả
+      // dòng là câu hỏi như hành vi cũ.
+      const qNumMatch = p.text.match(/^((?:câu|cau)\s*\d+\s*(?:\([^)]{0,10}\))?\s*[.):\-–—]|(?:question|bài|phần)\s*\d+\s*[.):\-–—]|[IVXLC]+\.\d+[.):\s]+|\(\s*\d+\s*\)\s*|\[\s*\d+\s*\]\s*|\d+\s*[.)]\s*(?=[A-Ea-e][.)]))/iu);
+      const rest = qNumMatch ? p.text.slice(qNumMatch[0].length) : '';
+      if (qNumMatch && /^[A-Ea-e][\.\)]/.test(rest.trim())) {
+        const restRuns = sliceRunsByOffset(p.runs, qNumMatch[0].length);
+        const restPara = { text: rest, runs: restRuns };
+        const candidates = [trySplit(restPara), trySplitText(restPara), trySplitTextCD(restPara)].filter(Boolean);
+        const best = candidates.length
+          ? candidates.reduce((b, cur) => cur.length > b.length ? cur : b)
+          : null;
+        if (best && best.length >= 2) {
+          // Giữ lại dòng câu hỏi với phần số + một khoảng trắng + dấu gạch
+          // dưới làm placeholder nội dung — bắt buộc phải có vì RE_Q yêu cầu
+          // một ký tự không-phải-khoảng-trắng ngay sau "N." để được coi là
+          // câu hỏi hợp lệ (bare "1." không tự khớp RE_Q, khiến parse() âm
+          // thầm bỏ qua toàn bộ câu này trước khi sửa). parse() sẽ tự strip
+          // phần "N." này đi qua replace() có sẵn, còn placeholder "_" sẽ bị
+          // trim ở bước q.text.trim() ngay sau, không lộ ra ngoài UI.
+          const qNumLine = qNumMatch[0].trim() + ' \u200B';
+          lines.push({ text: qNumLine, runs: [{text: qNumLine, u:false,b:false,s:false}] });
+          for (const e of best) lines.push(e);
+          continue;
+        }
+      }
+      lines.push(p);
+      continue;
+    }
+    // Try every splitting strategy and keep whichever finds the MOST options.
+    // trySplit() can under-split when a marker (e.g. "C.") ends up appended
+    // inside a larger combined run instead of having its own short marker-only
+    // run; trySplitText()/trySplitTextCD() work at the character level and,
+    // now that tabs are preserved as real \t characters, reliably catch every
+    // marker even when trySplit() only finds the first one or two.
+    const candidates = [trySplit(p), trySplitText(p), trySplitTextCD(p)].filter(Boolean);
+    const expanded = candidates.length
+      ? candidates.reduce((best, cur) => cur.length > best.length ? cur : best)
+      : [p];
+    for (const e of expanded) lines.push(e);
+  }
+  return lines;
+}
+
+// Cắt mảng runs tại 1 offset ký tự (dùng khi tách bỏ phần "N. " khỏi đầu
+// dòng nhưng vẫn cần giữ đúng cờ định dạng bold/underline/... của phần còn
+// lại cho các bước split tiếp theo).
+function sliceRunsByOffset(runs, offset) {
+  const out = [];
+  let consumed = 0;
+  for (const run of runs) {
+    const len = run.text.length;
+    if (consumed + len <= offset) { consumed += len; continue; }
+    const sliceStart = Math.max(0, offset - consumed);
+    out.push({ ...run, text: run.text.slice(sliceStart) });
+    consumed += len;
+  }
+  return out;
+}
+
+// Split a C+D only line (second column of a 2-col table row where A+B was already on a previous line)
+function trySplitTextCD(para) {
+  const txt = para.text.trim();
+  // Must start with C. or D. (second column)
+  if (!/^[CDcd][\.\)]/.test(txt)) return null;
+  // Must have at least 2 markers
+  const charFlags = [];
+  for (const run of para.runs) {
+    for (const ch of run.text) charFlags.push({u: run.u, b: run.b, s: run.s, c: run.colored||false, h: run.highlighted||false});
+  }
+  const positions = [];
+  for (let i = 0; i < txt.length - 1; i++) {
+    const ch = txt[i];
+    if (!/[CDEcde]/.test(ch)) continue;
+    const next = txt[i+1];
+    if (next !== '.' && next !== ')') continue;
+    const prev = i > 0 ? txt[i-1] : '';
+    const validPrev = i === 0 || /[\s\t\d\.,]/.test(prev);
+    if (!validPrev) continue;
+    if (ch === ch.toLowerCase() && i > 0 && /[a-zA-ZÀ-ỹ]/.test(prev)) continue;
+    positions.push({pos: i, letter: ch.toUpperCase()});
+  }
+  if (positions.length < 1) return null;
+  // First must be C or D
+  if (!['C','D'].includes(positions[0]?.letter)) return null;
+  const opts = [];
+  for (let pi = 0; pi < positions.length; pi++) {
+    const start = positions[pi].pos;
+    const end = pi+1 < positions.length ? positions[pi+1].pos : txt.length;
+    const optTxt = txt.slice(start, end).trim();
+    const letter = positions[pi].letter;
+    const content = optTxt.replace(/^[CDEcde][\.\)] ?/, '').trim();
+    if (!content) continue;
+    const normalized = letter + '. ' + content;
+    const flags = scanRangeFlags(charFlags, start, end);
+    opts.push({text: normalized, runs: para.runs, _mu: flags.u, _mb: flags.b, _ms: flags.s, _mc: flags.c, _mh: flags.h});
+  }
+  if (opts.length >= 1 && opts.every(o => /^[C-E]\. \S/.test(o.text))) return opts;
+  return null;
+}
+
+function trySplit(para) {
+  // Find all runs that are pure option markers
+  // A "pure marker run" = trimmed text matches /^[A-E][.)]?\s*$/ AND run is short (≤3 chars)
+  const markerIdx = []; // indices of marker runs
+  for (let i = 0; i < para.runs.length; i++) {
+    const t = para.runs[i].text.trim();
+    if (RE_MARKER.test(t) && t.length <= 3) markerIdx.push(i);
+  }
+
+  // Need ≥2 markers, first one at or near start (allow up to index 3)
+  if (markerIdx.length < 2) return null;
+  if (markerIdx[0] > 3) return null; // first marker not at start
+
+  // Build virtual options: slice runs between markers
+  const opts = [];
+  for (let mi = 0; mi < markerIdx.length; mi++) {
+    const start = markerIdx[mi];
+    const end   = mi+1 < markerIdx.length ? markerIdx[mi+1] : para.runs.length;
+    const rslice = para.runs.slice(start, end);
+    const txt = rslice.map(r=>r.text).join('').trim();
+    // Normalize: ensure "A. text" format
+    const letter = para.runs[start].text.trim()[0].toUpperCase();
+    const normalized = letter + '. ' + txt.replace(/^[A-Ea-e][\.)] ?/, '').trim();
+    opts.push({
+      text: normalized,
+      runs: rslice,
+      _mu: para.runs[start].u,
+      _mb: para.runs[start].b,
+      _ms: para.runs[start].s,
+      _mc: para.runs[start].colored || false,
+      _mh: para.runs[start].highlighted || false,
+    });
+  }
+
+  // Validate all look like options
+  if (!opts.every(o => /^[A-E]\. /.test(o.text))) return null;
+  return opts;
+}
+
+// Fallback text-level split for inline options like "A. 2  B. 3  C. 4  D. 5"
+// or "A. 2B. 3C. 4D. 5" (no spaces between)
+// Also handles 2-column layouts with only A+C or A+B on same line.
+// v4: hỗ trợ thêm:
+//  • Tab (\t) làm separator giữa các đáp án (dạng A.x\tB.y\tC.z)
+//  • Đáp án viết liền không có khoảng trắng sau dấu (A.apple B.banana)
+//  • Phần văn bản giới thiệu trước "A." (ví dụ "Choose A. something")
+//  • Dấu ngoặc quanh option content: A.(something)
+// Quét cờ định dạng (bold/underline/strike/màu/highlight) trên TOÀN BỘ dải
+// ký tự [start, end) thay vì chỉ đọc tại 1 điểm — vì giáo viên thường đánh
+// dấu đáp án đúng bằng cách bold/gạch chân MỘT PHẦN của option (ví dụ chỉ
+// bold chữ "Congratulations" chứ không bold luôn "D. "), nên nếu chỉ kiểm
+// tra ký tự đầu tiên (vị trí marker) sẽ luôn ra false dù đáp án rõ ràng đã
+// được đánh dấu. Quy tắc: 1 cờ được coi là "có" cho cả option nếu ít nhất
+// một KÝ TỰ CHỮ/SỐ nào trong dải đó mang cờ ấy (bỏ qua khoảng trắng/dấu câu
+// để tránh những trường hợp dấu chấm/khoảng trắng vô tình dính định dạng).
+function scanRangeFlags(charFlags, start, end) {
+  const flags = { u: false, b: false, s: false, c: false, h: false };
+  for (let i = Math.max(0, start); i < Math.min(charFlags.length, end); i++) {
+    const f = charFlags[i];
+    if (!f) continue;
+    if (f.u) flags.u = true;
+    if (f.b) flags.b = true;
+    if (f.s) flags.s = true;
+    if (f.c) flags.c = true;
+    if (f.h) flags.h = true;
+  }
+  return flags;
+}
+
+function trySplitText(para) {
+  const txt = para.text;
+
+  // Build char-level flags from runs
+  const charFlags = [];
+  for (const run of para.runs) {
+    for (const ch of run.text) charFlags.push({u: run.u, b: run.b, s: run.s, c: run.colored||false, h: run.highlighted||false});
+  }
+
+  // Phát hiện tab-separated: tách theo \t rồi kiểm mỗi phần bắt đầu bằng [A-E][.)]
+  // LƯU Ý: một "phần" sau khi tách theo tab đôi khi vẫn chứa NHIỀU hơn 1 đáp án
+  // dính liền nhau bằng khoảng trắng thường thay vì tab (ví dụ giáo viên gõ
+  // "C. Better luck next time!      D. Congratulations!" chỉ có 1 tab ở đầu
+  // dòng, còn C/D cách nhau bằng nhiều space) — nếu chỉ tách theo tab một lần,
+  // D sẽ bị nuốt luôn vào nội dung của C. Nên với MỖI phần, quét tiếp bên
+  // trong để tìm các marker phụ [A-E]. ở giữa và tách tiếp trước khi ghép
+  // option cuối cùng.
+  const tabParts = txt.split(/\t+/);
+  if (tabParts.length >= 2 && tabParts.filter(p => /^[A-Ea-e][\.\)]/.test(p.trim())).length >= 2) {
+    const opts = [];
+    let charOffset = 0;
+    for (const part of tabParts) {
+      const trimmed = part.trim();
+      const partStart = txt.indexOf(part, charOffset);
+      charOffset = partStart + part.length;
+      const m = trimmed.match(/^([A-Ea-e])[\.\)]\s*([\s\S]+)$/);
+      if (!m) continue;
+
+      // Tìm mọi marker phụ [A-E]. xuất hiện SAU marker đầu tiên trong cùng
+      // phần này (dấu hiệu 2+ đáp án dính chung 1 "tab-part"). Yêu cầu ký
+      // tự đứng trước marker phụ là khoảng trắng để tránh bắt nhầm chữ hoa
+      // giữa từ tiếng Anh (ví dụ không tách nhầm chữ "D" trong "AND.").
+      const subPositions = [];
+      const subRe = /[A-Ea-e][\.\)]\s/g;
+      let sm;
+      while ((sm = subRe.exec(trimmed))) {
+        const pos = sm.index;
+        if (pos === 0) continue; // đây là marker đầu, không phải marker phụ
+        const prevCh = trimmed[pos - 1];
+        if (!/\s/.test(prevCh)) continue; // phải đứng sau khoảng trắng thực sự
+        subPositions.push(pos);
+      }
+
+      if (subPositions.length) {
+        // Cắt "trimmed" tại từng vị trí marker phụ để tách thành nhiều option.
+        const bounds = [0, ...subPositions, trimmed.length];
+        for (let bi = 0; bi < bounds.length - 1; bi++) {
+          const chunk = trimmed.slice(bounds[bi], bounds[bi + 1]).trim();
+          const cm = chunk.match(/^([A-Ea-e])[\.\)]\s*([\s\S]+)$/);
+          if (!cm) continue;
+          const letter = cm[1].toUpperCase();
+          const content = cm[2].trim();
+          if (!content) continue;
+          // Vị trí tuyệt đối của chunk trong toàn văn bản gốc (txt), dùng để
+          // quét cờ định dạng (bold/underline/...) trên đúng phạm vi ký tự
+          // của option này thay vì chỉ 1 điểm — xem ghi chú "scanRangeFlags".
+          const chunkStart = txt.indexOf(chunk, partStart);
+          const chunkEnd = chunkStart + chunk.length;
+          const flags = scanRangeFlags(charFlags, chunkStart, chunkEnd);
+          opts.push({text: letter + '. ' + content, runs: para.runs, _mu: flags.u, _mb: flags.b, _ms: flags.s, _mc: flags.c, _mh: flags.h});
+        }
+        continue;
+      }
+
+      const letter = m[1].toUpperCase();
+      const content = m[2].trim();
+      if (!content) continue;
+      const contentStart = txt.indexOf(content, partStart);
+      const flags = scanRangeFlags(charFlags, contentStart, contentStart + content.length);
+      opts.push({text: letter + '. ' + content, runs: para.runs, _mu: flags.u, _mb: flags.b, _ms: flags.s, _mc: flags.c, _mh: flags.h});
+    }
+    if (opts.length >= 2) return opts;
+  }
+
+  // Find all option marker positions in raw text
+  // Mở rộng: cho phép KHÔNG có khoảng trắng sau dấu (A.apple), cho phép dấu "–"/"—"
+  const positions = [];
+  for (let i = 0; i < txt.length - 1; i++) {
+    const ch = txt[i];
+    if (!/[A-Ea-e]/.test(ch)) continue;
+    const next = txt[i+1];
+    if (next !== '.' && next !== ')' && next !== '–' && next !== '—') continue;
+    // Valid preceding context: đầu dòng, khoảng trắng, tab, chữ số, dấu chấm/phẩy, ngoặc đóng
+    const prev = i > 0 ? txt[i-1] : '';
+    const validPrev = i === 0 || /[\s\t\d\.,\)\]>]/.test(prev);
+    if (!validPrev) continue;
+    // Skip chữ thường đứng giữa từ tiếng Anh/Việt (e.g. "apple" → 'e' trước là 'l')
+    if (ch === ch.toLowerCase() && i > 0 && /[a-zA-ZÀ-ỹ]/.test(prev)) continue;
+    positions.push({pos: i, letter: ch.toUpperCase()});
+  }
+
+  if (positions.length < 2) return null;
+
+  // Cho phép phần tiền tố trước A. (ví dụ "Choose " hoặc "Select: ")
+  // Chấp nhận A không cần ở vị trí 0, nhưng tối đa 20 ký tự trước A
+  if (positions[0].pos > 20) return null;
+
+  // Validate: first letter must be A; all letters in A-E; ascending order
+  const letters = positions.map(p => p.letter);
+  const expected = new Set(['A','B','C','D','E']);
+  if (letters[0] !== 'A') return null;
+  if (!letters.every(l => expected.has(l))) return null;
+  for (let i=1; i<letters.length; i++) {
+    if (letters[i] <= letters[i-1]) return null;
+  }
+
+  const opts = [];
+  for (let pi = 0; pi < positions.length; pi++) {
+    const start = positions[pi].pos;
+    const end   = pi+1 < positions.length ? positions[pi+1].pos : txt.length;
+    const optTxt = txt.slice(start, end).trim();
+    const letter = positions[pi].letter;
+    // Strip marker: A. / A) / A– / A— (có hoặc không có khoảng trắng)
+    const content = optTxt.replace(/^[A-Ea-e][\.\)\-–—]\s*/, '').trim();
+    if (!content) continue;
+    const normalized = letter + '. ' + content;
+    // Quét cờ định dạng trên toàn bộ dải [start, end) — không chỉ tại điểm
+    // marker — để bắt được cả trường hợp giáo viên chỉ bold/gạch chân một
+    // phần nội dung sau marker (xem ghi chú tại scanRangeFlags).
+    const flags = scanRangeFlags(charFlags, start, end);
+    opts.push({text: normalized, runs: para.runs, _mu: flags.u, _mb: flags.b, _ms: flags.s, _mc: flags.c, _mh: flags.h});
+  }
+
+  if (opts.length >= 2 && opts.every(o => /^[A-E]\. \S/.test(o.text))) return opts;
+  return null;
+}
+
+// insertStressUnderlines: dựng lại text của 1 option, chèn <u>...</u> quanh
+// từng dải ký tự gạch chân LIÊN TỤC bên trong nội dung (dùng cho chế độ
+// trọng âm tiếng Anh — trọng âm chỉ gạch 1-2 âm tiết ngắn, không phải cả
+// option). contentStart là vị trí ký tự trong `fullText` nơi nội dung thật
+// sự bắt đầu (sau khi đã bỏ marker "A. "). Output là text thuần cho
+// Learnsy (không render trong DOM), nên không cần escape HTML.
+function insertStressUnderlines(fullText, runs, contentStart) {
+  const uFlags = [];
+  for (const run of runs) {
+    for (const ch of run.text) uFlags.push(!!run.u);
+  }
+  let end = fullText.length;
+  let start = contentStart;
+  while (start < end && /\s/.test(fullText[start])) start++;
+  while (end > start && /\s/.test(fullText[end-1])) end--;
+
+  let out = '';
+  let idx = start;
+  while (idx < end) {
+    if (uFlags[idx]) {
+      let segEnd = idx;
+      while (segEnd < end && uFlags[segEnd]) segEnd++;
+      const seg = fullText.slice(idx, segEnd);
+      // Không bọc <u> quanh khoảng trắng thuần (tránh "text <u> </u> text")
+      out += seg.trim() ? '<u>' + seg + '</u>' : seg;
+      idx = segEnd;
+    } else {
+      out += fullText[idx];
+      idx++;
+    }
+  }
+  return out;
+}
+
+// ─── STEP 3: Parse questions ─────────────────────────────
+function parse(lines, source) {
+  source = source || 'text';
+  const qs = [];
+  let i = 0;
+  // sectionLabel: nhãn exercise/section hiện tại (vd "Exercise 2"), reset mỗi
+  // khi gặp dòng khớp RE_SECTION. Gắn vào từng câu hỏi (q.section) để giữ lại
+  // thông tin phần khi xuất — tránh việc câu "1." của Exercise 2 bị đánh số
+  // đè/nối tiếp lên câu cuối Exercise 1 do parse() trước đây chỉ đếm tuần tự
+  // theo vị trí trong mảng, không biết gì về ranh giới exercise.
+  let sectionLabel = null;
+  // ── Context-aware parsing: "đề dùng chung" (shared passage) ─────────────
+  // Nhiều đề đọc hiểu có 1 đoạn văn/tình huống đứng riêng một mình (không
+  // phải câu hỏi, không phải option, không phải khai báo đáp án) ngay TRƯỚC
+  // một chuỗi câu hỏi chỉ có "Câu N." + đáp án A/B/C/D mà không có nội dung
+  // câu hỏi riêng. Trước đây các câu này luôn bị đánh dấu q.needsPrompt và
+  // bắt buộc người dùng tự gõ tay. Giờ ta gom các dòng "mồ côi" (orphan) đó
+  // lại thành passageBuffer khi duyệt tuần tự — dòng nào không khớp RE_Q/
+  // RE_SECTION và không bị "nuốt" làm phần mở rộng của câu hỏi trước (tức
+  // xuất hiện SAU khi câu trước đã có ít nhất 1 option, nghĩa là câu trước
+  // đã "đóng") sẽ được coi là ứng viên đề dẫn. Khi gặp câu hỏi rỗng
+  // (needsPrompt), tự động lấy passageBuffer gần nhất làm đề — chỉ rơi về
+  // hỏi popup thủ công khi không có ứng viên nào (giữ nguyên hành vi cũ).
+  let passageBuffer = '';
+  // Đánh dấu passageBuffer hiện tại đã được ít nhất 1 câu hỏi "mượn" làm đề
+  // dùng chung hay chưa. Nếu đã mượn rồi mà gặp thêm 1 đoạn orphan mới, đó
+  // là ĐOẠN VĂN CỦA NHÓM CÂU TIẾP THEO (shared-stem #2), không phải phần
+  // nối dài của đoạn cũ — nếu cứ nối chuỗi như trước, nhóm câu thứ 2 sẽ bị
+  // gán nhầm cả đề dẫn 1 lẫn đề dẫn 2 dính liền nhau.
+  let passageBufferUsed = false;
+  while (i < lines.length) {
+    // Dòng tiêu đề phần lớn (Exercise/Section/Part/Bài tập/Phần N) — không
+    // phải bản thân 1 câu hỏi, chỉ dùng để reset ngữ cảnh đánh số rồi bỏ qua.
+    if (RE_SECTION.test(lines[i].text.trim())) {
+      sectionLabel = lines[i].text.trim().replace(/[:.\-–—]\s*$/, '');
+      passageBuffer = ''; // qua phần mới → đề dẫn cũ (nếu có) không còn áp dụng
+      i++;
+      continue;
+    }
+
+    if (!RE_Q.test(lines[i].text)) {
+      // Dòng mồ côi đứng giữa 2 câu hỏi (không phải option/đáp án của câu
+      // trước, vì nếu còn thuộc câu trước thì vòng lặp bên trong đã tiêu
+      // thụ nó rồi) — có thể là đoạn văn đề dẫn dùng chung. Bỏ qua các dòng
+      // quá ngắn (nhiều khả năng là rác/khoảng trắng thừa) để tránh gán
+      // nhầm 1-2 từ vô nghĩa làm "đề bài".
+      const orphan = lines[i].text.trim();
+      if (orphan.length >= 15 && !RE_ANS.test(orphan) && !RE_OPT_LINE.test(orphan)) {
+        if (passageBufferUsed) {
+          // Buffer cũ đã phục vụ xong 1 nhóm câu hỏi — đoạn orphan mới này
+          // mở đầu nhóm shared-stem KẾ TIẾP, không phải phần nối dài.
+          passageBuffer = orphan;
+          passageBufferUsed = false;
+        } else {
+          passageBuffer = passageBuffer ? passageBuffer + '\n' + orphan : orphan;
+        }
+      }
+      i++;
+      continue;
+    }
+
+    const q = {
+      section: sectionLabel,
+      text: lines[i].text
+        .replace(/^(?:câu|cau)\s*\d+\s*(?:\([^)]{0,10}\))?\s*[\.\):\-–—]\s*/i,'')
+        .replace(/^(?:question|bài|phần)\s*\d+\s*[\.\):\-–—]\s*/i,'')
+        .replace(/^[IVXLC]+\.\d+[\.\):\s]+/,'')
+        .replace(/^\(\s*\d+\s*\)\s*/,'')
+        .replace(/^\[\s*\d+\s*\]\s*/,'')
+        .replace(/^\d+\s*[\.\)]\s+/,'')
+        .replace(/\u200B/g, '') // placeholder vô hình dùng để ép RE_Q khớp dòng "N." trơ trọi — xem expandParas
+        .trim(),
+      opts: [],   // [{key,text,u,b,s}]
+      ans: null,
+      how: null,
+      source,
+    };
+    i++;
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // Explicit answer keyword line
+      const am = line.text.match(RE_ANS);
+      if (am) { q.ans = am[1].toUpperCase(); q.how = 'text'; i++; break; }
+
+      // Next question → stop (regardless of opts count)
+      if (RE_Q.test(line.text)) break;
+
+      // Option line — RE_OPT_LINE chấp nhận cả "A." "A)" "A-" "A–" "A—" "a/"
+      if (RE_OPT_LINE.test(line.text)) {
+        const m = line.text.match(new RegExp('^([A-Ea-e])[' + OPT_SEP + ']\\s*(.*)', 's'));
+        if (!m) { i++; continue; }
+        const key = m[1].toUpperCase();
+        let text = m[2].trim();
+
+        // Get signals:
+        // Priority 1: pre-computed marker signals from split (_mu/_mb/_ms/_mc/_mh)
+        // Priority 2: scan runs for marker run signal
+        let u = false, b = false, s = false, c = false, h = false;
+        if ('_mu' in line) {
+          u = line._mu; b = line._mb; s = line._ms; c = line._mc || false; h = line._mh || false;
+          // Nhánh multi-column/tab-split chỉ có 1 flag gộp cho cả option, không
+          // có vị trí ký tự cụ thể để chèn <u> — giữ nguyên hành vi cũ ở đây.
+        } else {
+          // Find the run containing the option letter (with or without trailing dot/paren)
+          for (const run of line.runs) {
+            const rt = run.text.trim();
+            // Match: "A" "A." "A)" or just the letter
+            const letterMatch = rt.match(/^([A-Ea-e])[\.)]?\s*$/);
+            if (letterMatch && letterMatch[1].toUpperCase() === key) {
+              u = run.u; b = run.b; s = run.s; c = run.colored||false; h = run.highlighted||false; break;
+            }
+            // Also match full "A. text" run — take formatting of first char
+            if (rt.startsWith(key) || rt.startsWith(key.toLowerCase())) {
+              const firstCharKey = rt[0].toUpperCase();
+              if (firstCharKey === key && /^[A-Ea-e][\.\)]/.test(rt)) {
+                u = run.u; b = run.b; s = run.s; c = run.colored||false; h = run.highlighted||false; break;
+              }
+            }
+          }
+          // Fallback: if whole line is underlined
+          if (!u && line.runs.length && line.runs.every(r=>r.u)) u = true;
+
+          // ── Chế độ trọng âm: chèn <u>...</u> quanh TỪNG dải ký tự gạch
+          // chân riêng lẻ trong nội dung option (không phải cả option), vì
+          // trọng âm chỉ gạch chân 1 âm tiết ngắn bên trong 1 từ — khác với
+          // gạch chân đáp án đúng (thường phủ cả cụm/cả option). Dùng
+          // line.runs (đã có ở nhánh này) để dựng lại text kèm tag.
+          if (stressMode && line.runs && line.runs.length) {
+            const contentStart = line.text.length - m[2].length; // vị trí m[2] bắt đầu trong line.text gốc
+            text = insertStressUnderlines(line.text, line.runs, contentStart);
+          }
+        }
+
+        q.opts.push({key, text, u, b, s, c, h});
+        i++;
+        continue;
+      }
+
+      // Non-option non-question: append to q.text if no opts yet
+      if (q.opts.length === 0) { q.text += ' ' + line.text; i++; continue; }
+      // Câu hỏi đã có ≥1 option nhưng dòng này không phải option/đáp án/câu
+      // mới → đây là ranh giới cuối của câu hiện tại (ví dụ đoạn văn đề dẫn
+      // đứng ngay sau khối đáp án cuối cùng của 1 câu, mở đầu cho nhóm câu
+      // tiếp theo dùng chung đề). Thoát vòng lặp con NGAY (không consume
+      // dòng này, không i++) để nó được xử lý lại ở top-level loop — nơi có
+      // logic gom passageBuffer cho "đề dùng chung". Nếu cứ nuốt câm lặng ở
+      // đây như trước, đoạn văn đề dẫn sẽ biến mất hoàn toàn khỏi output.
+      break;
+    }
+
+    if (q.opts.length < 2) continue;
+
+    // Determine answer from formatting if not explicit
+    if (!q.ans) {
+      // Detect if all options are strikethrough (đề cũ pattern)
+      const allStruck = q.opts.every(o => o.s);
+
+      // Score each option
+      let best = null, bestScore = 0, bestHow = null;
+      for (const o of q.opts) {
+        let sc = 0, how = null;
+        // Chế độ trọng âm: gạch chân (u) giờ đánh dấu âm tiết trọng âm, KHÔNG
+        // còn là tín hiệu đáp án đúng — bỏ hẳn nhánh o.u, chỉ còn bold/màu/
+        // highlight/strikethrough làm căn cứ suy đoán.
+        if (allStruck) {
+          if (!stressMode && o.u && o.b) { sc = 92; how = 'bold+underline'; }
+          else if (!stressMode && o.u)   { sc = 87; how = 'underline'; }
+          else if (o.b)   { sc = 70; how = 'bold'; }
+          else if (o.c || o.h) { sc = 60; how = o.c ? 'colored' : 'highlighted'; }
+        } else {
+          if (!stressMode && o.u && o.b) { sc = 92; how = 'bold+underline'; }
+          else if (!stressMode && o.u)   { sc = 87; how = 'underline'; }
+          else if (o.b)   { sc = 76; how = 'bold'; }
+          else if (o.c && o.h) { sc = 68; how = 'colored'; }
+          else if (o.c)   { sc = 64; how = 'colored'; }
+          else if (o.h)   { sc = 60; how = 'highlighted'; }
+        }
+        if (sc > bestScore) { bestScore = sc; best = o; bestHow = how; }
+      }
+      // Ambiguous-signal check: nếu ≥2 option cùng đạt điểm cao nhất, KHÔNG
+      // chọn liều option đầu tiên tìm thấy. Bold/underline gần như luôn là
+      // chủ ý của giáo viên (hiếm khi 2 option cùng bold do nhầm lẫn), nhưng
+      // colored/highlighted (điểm ≤68) rất dễ dính định dạng thừa khi giáo
+      // viên copy-paste đề từ nguồn khác — 2 option cùng có màu thường là
+      // NHIỄU chứ không phải cố ý đánh dấu 2 đáp án đúng. Chỉ áp dụng kiểm
+      // tra này cho nhóm tín hiệu yếu (≤68 điểm) để không phá hành vi cũ với
+      // bold/underline vốn đã đáng tin cậy.
+      if (best && bestScore <= 68) {
+        const tiedCount = q.opts.filter(o => {
+          let sc2 = 0;
+          if (allStruck) {
+            if (o.b) sc2 = 70; else if (o.c || o.h) sc2 = 60;
+          } else {
+            if (o.b) sc2 = 76;
+            else if (o.c && o.h) sc2 = 68;
+            else if (o.c) sc2 = 64;
+            else if (o.h) sc2 = 60;
+          }
+          return sc2 === bestScore;
+        }).length;
+        if (tiedCount >= 2) { best = null; bestScore = 0; bestHow = null; }
+      }
+      // Strikethrough elimination: if all-but-one are struck (and not allStruck)
+      if (!allStruck) {
+        const struck = q.opts.filter(o=>o.s).map(o=>o.key);
+        if ((!best || bestScore < 50) && struck.length > 0) {
+          const remain = q.opts.filter(o=>!struck.includes(o.key));
+          if (remain.length === 1) { best = remain[0]; bestScore = 65; bestHow = 'exclude'; }
+        }
+      }
+      if (best && bestScore >= 50) { q.ans = best.key; q.how = bestHow; }
+    }
+
+    // Câu không có đề: dòng "Câu N." chỉ có số thứ tự, không kèm nội dung
+    // câu hỏi nào, và không có dòng phi-option nào được gộp thêm vào q.text
+    // trước khi gặp option đầu tiên (trường hợp giáo viên dùng chung 1 đề
+    // cho nhiều câu liên tiếp).
+    if (!q.text.trim()) {
+      if (passageBuffer) {
+        // Tìm được đoạn văn mồ côi đứng trước nhóm câu này → tự động gán
+        // làm đề dùng chung, KHÔNG cần hỏi người dùng. q.sharedStem đánh
+        // dấu để UI có thể hiển thị khác đi nếu muốn (vd icon "đề chung"),
+        // khác với đề do người dùng tự gõ qua promptForMissingStems().
+        q.text = passageBuffer;
+        q.sharedStem = true;
+        q.needsPrompt = false;
+        passageBufferUsed = true;
+      } else {
+        // Không có ứng viên đề dẫn nào — giữ hành vi cũ: đánh dấu để hỏi
+        // user điền đề sau khi parse xong toàn bộ file — xem
+        // promptForMissingStems().
+        q.needsPrompt = true;
+      }
+    } else {
+      q.needsPrompt = false;
+      // Câu này có đề riêng rõ ràng → đề dẫn dùng chung trước đó (nếu có)
+      // coi như đã hết hiệu lực, không áp cho các câu tiếp theo nữa.
+      passageBuffer = '';
+    }
+
+    // Chỉ với câu đến từ OCR: kiểm tra xem đề bài hoặc bất kỳ đáp án nào còn
+    // ký tự đáng ngờ (glyph Tesseract đoán bừa) — gắn cờ để buildCard() hiện
+    // badge cảnh báo, nhắc giáo viên soát tay thay vì tin nhầm nội dung.
+    if (source === 'tesseract') {
+      q.ocrSuspicious = detectSuspiciousChars(q.text) || q.opts.some(o => detectSuspiciousChars(o.text));
+    }
+
+    qs.push(q);
+  }
+  return qs;
+}
+
+// ─── STEP 4: Render ──────────────────────────────────────
+const IMG_EXT = /\.(png|jpe?g|gif|bmp|webp)$/i;
+const OCR_AUTOSELECT_BYTES = 30 * 1024; // pre-check images above ~30KB (likely full-page scans, not small logos)
+
+async function detectImages(zip) {
+  const entries = zip.file(/^word\/media\//i).filter(f => IMG_EXT.test(f.name));
+  if (!entries.length) return;
+  try {
+    const loaded = await Promise.all(entries.map(async f => {
+      const blob = await f.async('blob');
+      return { name: f.name, blob, url: URL.createObjectURL(blob), size: blob.size, selected: blob.size > OCR_AUTOSELECT_BYTES };
+    }));
+    ocrImages = loaded;
+    document.getElementById('ocrTitle').innerHTML = ICONS.image + ' Phát hiện ảnh trong file';
+    document.getElementById('ocrHint').textContent = 'Có thể là đề/câu hỏi dạng scan. Chọn ảnh muốn quét (đã tự chọn sẵn ảnh lớn) rồi bấm Quét. Đã hỗ trợ nhận diện đáp án được tô VÀNG (dạ quang); không nhận diện được tô đậm/gạch chân nên câu chưa tô vàng sẽ cần bạn tự điền đáp án đúng.';
+    renderOcrThumbs();
+    showEl('ocrSection');
+  } catch (e) {
+    // Image scan is best-effort only; ignore failures silently.
+  }
+}
+
+function renderOcrThumbs() {
+  const c = document.getElementById('ocrThumbs');
+  c.innerHTML = '';
+  ocrImages.forEach((im, idx) => {
+    const t = el('div', 'ocr-thumb' + (im.selected ? ' sel' : ''));
+    t.onclick = () => { im.selected = !im.selected; renderOcrThumbs(); };
+    const img = document.createElement('img');
+    img.src = im.url;
+    t.appendChild(img);
+    const chk = el('div', 'chk'); chk.innerHTML = im.selected ? ICONS.check : '';
+    t.appendChild(chk);
+    const sz = el('div', 'sz'); sz.textContent = im.size > 1024 ? Math.round(im.size/1024)+' KB' : im.size+' B';
+    t.appendChild(sz);
+    c.appendChild(t);
+  });
+
+  // Nút "Tải thêm trang" chỉ hiện với PDF scan còn trang chưa render
+  // (ảnh/docx không có pdfThumbState nên luôn ẩn).
+  const moreRow = document.getElementById('loadMoreRow');
+  const hasMore = !!pdfThumbState && pdfThumbState.nextPage <= pdfThumbState.numPages;
+  moreRow.style.display = hasMore ? 'block' : 'none';
+  if (hasMore) {
+    const remain = pdfThumbState.numPages - pdfThumbState.nextPage + 1;
+    setIconText('loadMoreBtn', 'refresh', `Tải thêm trang (còn ${remain}/${pdfThumbState.numPages})`);
+  }
+}
+
+// Strip common markdown artifacts that vision-LLMs / messy OCR sometimes
+// add around lines (e.g. "**Câu 1:**" instead of "Câu 1:"), which would
+// otherwise fail RE_Q / the option-letter regex since those expect the
+// line to start with the literal text.
+function cleanOcrLine(t) {
+  let s = t.trim();
+  // Strip markdown artifacts
+  s = s.replace(/^(\*{1,3}|_{1,3}|#{1,6}|>|`{1,3}|-\s)\s*/, '');
+  s = s.replace(/(\*{1,3}|_{1,3}|`{1,3})\s*$/, '');
+  s = s.replace(/\*\*/g, '').replace(/_{2}/g, '');
+  s = s.trim();
+  if (!s) return s;
+
+  // Xoá ký tự VÔ NGHĨA mà Tesseract đôi khi trả về khi không chắc chắn về 1
+  // glyph (thường gặp với công thức toán/ký hiệu đặc biệt trong ảnh scan mà
+  // OCR text-only không thể "hiểu" — không phải lỗi code, mà là giới hạn của
+  // engine): ký tự thay thế Unicode "�" (U+FFFD), vùng Private Use Area
+  // (U+E000–U+F8FF, dùng cho icon font như Wingdings/Symbol không load được
+  // trên web), và control character ẩn. Không có cách nào "sửa" các ký tự
+  // này vì bản thân Tesseract không biết chúng là gì — chỉ có thể loại bỏ để
+  // tránh hiển thị rác, đồng thời đánh dấu dòng vào diện cần soát tay ở
+  // detectSuspiciousChars() bên dưới.
+  s = s.replace(/[\uFFFD\uE000-\uF8FF\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+  s = s.trim();
+  if (!s) return s;
+
+  // Sửa lỗi Tesseract: số "1" ngay sau "Câu"/"Bài"/"Phần" bị đọc nhầm thành
+  // chữ "l" thường hoặc "I" hoa (2 ký tự gần như giống hệt số 1 trong nhiều
+  // font) — vd "Câu l." hoặc "Câu I." thay vì "Câu 1.". Nếu không sửa, dòng
+  // này không còn khớp RE_Q nữa và CẢ CÂU HỎI biến mất khỏi kết quả OCR mà
+  // không có cảnh báo gì. Chỉ áp dụng ngay sau từ khóa câu/bài/phần (không
+  // đụng vào chữ l/I ở vị trí khác trong câu) để tránh sửa nhầm nội dung.
+  s = s.replace(/^((?:câu|cau|bài|bai|phần|phan)\s*)[lI](?=[\s.):\-–—])/i, '$11');
+
+  // Sửa lỗi OCR: ký tự bị nhầm ở vị trí đầu dòng đáp án (đứng trước . hoặc ))
+  //   G. → C.   (lỗi rất phổ biến của Tesseract với chữ C)
+  //   0. → D.   (số 0 bị đọc thành chữ D)
+  s = s.replace(/^G([.)]) /, 'C$1 ');
+  s = s.replace(/^G([.)])$/, 'C$1');
+  s = s.replace(/^0([.)]) /, 'D$1 ');
+  s = s.replace(/^0([.)])$/, 'D$1');
+
+  // Tách đáp án bị dính trên cùng một dòng (Tesseract đọc ngang)
+  // Ví dụ: "A. 2 B3 C4" → "A. 2\nB. 3\nC. 4"
+  // Ví dụ: "A. foo B. bar C. baz" → "A. foo\nB. bar\nC. baz"
+  if (/^[A-Da-d][\.)]/.test(s)) {
+    // Dạng B3 C4 (letter dính vào số, không có dấu chấm)
+    s = s.replace(/ ([B-Eb-e])(\d)/g, (_, l, d) => '\n' + l.toUpperCase() + '. ' + d);
+    // Dạng "B. text" hoặc "B) text" xuất hiện giữa dòng
+    s = s.replace(/ ([B-Eb-e])([.)])([ \t])/g, (_, l, dot, sp) => '\n' + l.toUpperCase() + dot + sp);
+  }
+
+  return s.trim();
+}
+
+// Ước lượng độ tin cậy của 1 chuỗi OCR: trả về true nếu có dấu hiệu rõ ràng
+// cho thấy Tesseract đã "đoán bừa" một phần của dòng này — dùng để gắn badge
+// cảnh báo lên câu hỏi/đáp án (KHÔNG dùng để tự động sửa, vì bản chất không
+// biết chữ đúng là gì). 2 tín hiệu chính:
+//   1) Ký tự lạ còn sót — vượt ra ngoài chữ cái Latin/Việt, số, dấu câu và
+//      ký hiệu toán thông thường (khác với PUA/replacement char đã bị
+//      cleanOcrLine() xoá hẳn ở trên — đây là các ký tự NHÌN GIỐNG chữ nhưng
+//      thuộc bảng khác, vd chữ Hy Lạp/Cyrillic lẫn vào do glyph giống nhau).
+//   2) Chuỗi 3+ ký tự liên tiếp không phải chữ cái/số nào cả (dấu câu vụn) —
+//      dấu hiệu của vùng ảnh mờ/nhiễu mà Tesseract chỉ đoán được rác.
+const RE_OCR_ALLOWED_CHAR = /[a-zA-Z0-9àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ\s.,:;!?()\[\]{}'"“”‘’\-–—/+=*×÷%°²³√∑π<>≤≥≈∞&@#$_~`|\\]/;
+function detectSuspiciousChars(text) {
+  if (!text) return false;
+  let stray = 0;
+  for (const ch of text) {
+    if (!RE_OCR_ALLOWED_CHAR.test(ch)) stray++;
+  }
+  // Ngưỡng: >2 ký tự lạ trên toàn dòng, HOẶC tỷ lệ >4% với dòng dài — tránh
+  // báo động giả với 1 ký hiệu hiếm hợp lệ đơn lẻ (vd 1 dấu ₫ lạc trong đề).
+  return stray > 2 || (text.length > 20 && stray / text.length > 0.04);
+}
+
+// OCR (especially on a phone-screen screenshot of a doc viewer) sees the
+// pixels as laid out, so a single logical sentence that visually wraps
+// onto a second screen-line comes back as TWO separate lines of text.
+// Without this, that second half would look like a stray non-option line
+// and get silently dropped, truncating every wrapped option/question.
+// Heuristic: a line that starts a new "Câu N", a new "A/B/C/D." option,
+// or an explicit answer line is a real new unit — anything else is a
+// continuation of whatever came right before it.
+// Nhận mảng {text, highlighted} — khi nối 1 dòng tiếp diễn vào dòng trước,
+// cờ highlighted được gộp bằng OR (chỉ cần MỘT trong hai nửa được tô vàng
+// là cả đáp án/câu ghép lại coi như có highlight).
+function rejoinOcrLines(lines) {
+  const startsNewUnit = s => RE_Q.test(s) || RE_OPT_LINE.test(s) || RE_ANS.test(s);
+  const out = [];
+  for (const line of lines) {
+    if (out.length === 0 || startsNewUnit(line.text)) {
+      out.push({ text: line.text, highlighted: !!line.highlighted });
+    } else {
+      const last = out[out.length - 1];
+      last.text += ' ' + line.text;
+      last.highlighted = last.highlighted || !!line.highlighted;
+    }
+  }
+  return out;
+}
+
+// Lazy full-res render: chỉ gọi đúng lúc cần OCR 1 trang cụ thể, KHÔNG render
+// trước toàn bộ PDF (tránh OOM crash trên thiết bị di động tầm trung khi đề
+// dài 15-20+ trang). Trả về blob full-res, người gọi chịu trách nhiệm dùng
+// xong rồi giải phóng (xem hydrateAndOcrPdfPage bên dưới).
+const SCALE_FULL = 2.0; // 2× để OCR rõ hơn — chỉ áp dụng cho 1 trang tại 1 thời điểm
+async function renderPageFull(pdfDoc, pageNum) {
+  const page = await pdfDoc.getPage(pageNum);
+  const vp = page.getViewport({ scale: SCALE_FULL });
+  const canvas = document.createElement('canvas');
+  canvas.width  = vp.width;
+  canvas.height = vp.height;
+  const ctx = canvas.getContext('2d');
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+  const blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.92));
+  // Giải phóng canvas ngay — không cần giữ lại sau khi đã có blob
+  canvas.width = 0; canvas.height = 0;
+  return blob;
+}
+
+async function runOcr() {
+  const selected = ocrImages.filter(im => im.selected);
+  if (!selected.length) { alert('Chưa chọn ảnh nào để quét.'); return; }
+
+  const btn = document.getElementById('ocrBtn');
+  const prog = document.getElementById('ocrProgress');
+  btn.disabled = true; btn.style.opacity = 0.6;
+  prog.style.display = 'flex';
+
+  // Lazy hydrate: với các trang đến từ PDF scan (chưa có blob full-res, chỉ
+  // có pdfDoc + pageNum), render full-res NGAY TRƯỚC KHI OCR — không render
+  // sẵn toàn bộ PDF cùng lúc. Theo dõi để giải phóng lại sau khi quét xong,
+  // tránh giữ nhiều ảnh full-res (hàng trăm MB) trong RAM cùng lúc.
+  const hydratedForRelease = [];
+  try {
+    setOcrProgress(prog, 'loader', 'Đang chuẩn bị ảnh độ phân giải cao để quét...');
+    for (let i = 0; i < selected.length; i++) {
+      const im = selected[i];
+      if (!im.blob && im.pdfDoc && im.pageNum) {
+        setOcrProgress(prog, 'loader', `Đang render trang ${im.pageNum} (độ phân giải cao)... (${i+1}/${selected.length})`);
+        im.blob = await renderPageFull(im.pdfDoc, im.pageNum);
+        hydratedForRelease.push(im);
+        await new Promise(r => setTimeout(r, 0)); // nhường UI giữa các trang
+      }
+    }
+
+    // Tesseract: dùng main thread — Web Worker Blob bị chặn khi mở từ content:// trên Android
+    const { combined, allLines } = await ocrWithTesseractMainThread(selected, prog);
+
+    // cleanOcrLine/rejoinOcrLines làm việc trên {text, highlighted} thay vì
+    // chuỗi thuần — khi 1 dòng OCR bị TÁCH ra nhiều dòng con (vd "A. 2 B. 3"
+    // → 2 dòng), mọi dòng con thừa hưởng CÙNG cờ highlighted của dòng gốc vì
+    // Tesseract chỉ cho bbox theo cả dòng, không tách được theo từng đáp án
+    // dính liền; khi 2 dòng bị NỐI lại (rejoin, do OCR ngắt dòng lỗi phông
+    // chữ tự nhiên), cờ được gộp bằng OR — chỉ cần 1 phần được tô vàng là đủ.
+    const cleanedLines = allLines.flatMap(({text: l, highlighted}) => {
+      const cleaned = cleanOcrLine(l);
+      return cleaned
+        ? cleaned.split('\n').map(x => x.trim()).filter(Boolean).map(text => ({text, highlighted}))
+        : [];
+    });
+    const processedLines = rejoinOcrLines(cleanedLines);
+    const ocrParas = processedLines.map(({text: t, highlighted}) => ({
+      text: t,
+      runs: [{text: t, u:false, b:false, s:false, colored:false, highlighted: !!highlighted}],
+      all_s:false
+    }));
+    const ocrLines = expandParas(ocrParas);
+    const ocrQs = parse(ocrLines, 'tesseract');
+
+    if (!ocrQs.length) {
+      prog.innerHTML = '';
+      const warn = document.createElement('div');
+      warn.className = 'msg-row';
+      warn.innerHTML = ICONS.alertTriangle + '<span>Không tìm thấy câu hỏi nào trong ảnh đã quét (ảnh có thể mờ, nghiêng, hoặc không đúng định dạng "Câu N:"). Text nhận diện được:</span>';
+      prog.appendChild(warn);
+      const raw = document.createElement('div');
+      raw.className = 'ocr-raw-fallback';
+      raw.textContent = combined.trim() ? combined.trim().slice(0, 3000) : '(rỗng — không nhận diện được chữ nào)';
+      prog.appendChild(raw);
+    } else {
+      allQ = allQ.filter(q => q.source !== 'tesseract').concat(ocrQs);
+      render(allQ);
+      setOcrProgress(prog, 'checkCircle', `Đã quét xong — ${ocrQs.length} câu từ ảnh (cần tự kiểm tra & điền đáp án).`);
+    }
+  } catch (e) {
+    setOcrProgress(prog, 'xCircle', 'Lỗi: ' + e.message);
+  } finally {
+    // Giải phóng full-res blob của các trang PDF vừa lazy-render — chỉ giữ
+    // lại thumbnail (url) để hiển thị, không giữ blob nặng trong RAM sau khi
+    // đã quét xong. Nếu người dùng quét lại trang này, sẽ render lại lazy.
+    hydratedForRelease.forEach(im => { im.blob = null; });
+    btn.disabled = false; btn.style.opacity = 1;
+  }
+}
+
+// ── Engine 1: Tesseract.js — main thread (Worker Blob bị chặn trên Android content://) ──
+// Web Worker via Blob URL không hoạt động khi HTML được mở từ content://media/... trên Android
+// (importScripts từ CDN bị Same-Origin block). Dùng main thread thay thế.
+async function ocrWithTesseract(selected, prog) {
+  return ocrWithTesseractMainThread(selected, prog);
+}
+
+// Fallback main-thread (giữ lại phòng trường hợp Worker bị chặn)
+// Dịch status Tesseract sang tiếng Việt
+const TESS_STATUS_VI = {
+  'downloading tesseract.js':     'Đang tải thư viện Tesseract.js...',
+  'loading tesseract core':       'Đang tải Tesseract...',
+  'initializing tesseract':       'Đang khởi động...',
+  'initialized tesseract':        'Khởi động xong',
+  'loading language traineddata': 'Đang tải dữ liệu tiếng Việt...',
+  'loaded language traineddata':  'Đã tải xong ngôn ngữ',
+  'initializing api':             'Đang khởi tạo...',
+  'recognizing text':             'Đang nhận diện chữ...',
+};
+
+function setOcrProgressBar(prog, pct, statusRaw) {
+  prog.style.display = 'flex';
+
+  // Tạo hoặc lấy lại các phần tử cố định
+  let row = prog.querySelector('.msg-row');
+  if (!row) {
+    prog.innerHTML = '';
+    row = document.createElement('div'); row.className = 'msg-row'; prog.appendChild(row);
+    const wrap = document.createElement('div'); wrap.className = 'ocr-pbar-wrap';
+    const fill = document.createElement('div'); fill.className = 'ocr-pbar-fill'; wrap.appendChild(fill);
+    prog.appendChild(wrap);
+    const lbl = document.createElement('div'); lbl.className = 'ocr-pbar-label'; prog.appendChild(lbl);
+  }
+
+  const statusVI = TESS_STATUS_VI[statusRaw] || statusRaw || 'Đang xử lý...';
+  setIconText(row, 'loader', statusVI);
+
+  const fill = prog.querySelector('.ocr-pbar-fill');
+  if (fill) {
+    fill.classList.remove('ocr-pbar-indeterminate');
+    fill.style.width = pct + '%';
+  }
+
+  const lbl = prog.querySelector('.ocr-pbar-label');
+  if (lbl) lbl.textContent = pct > 0 ? `${pct}%` : '';
+}
+
+// ── Phát hiện highlight màu vàng (đánh dấu đáp án đúng trong ảnh scan) ────
+// Nhiều đề scan/chụp không dùng bold/underline mà TÔ VÀNG (dạ quang) lên
+// đáp án đúng — định dạng này KHÔNG tồn tại trong text OCR thuần, nên trước
+// đây mọi câu lấy từ ảnh luôn thiếu đáp án. Cách xử lý: phân tích ẢNH GỐC
+// (còn màu, trước khi preprocessForOcr chuyển grayscale) để tìm những vùng
+// pixel có màu vàng đặc trưng của highlighter, rồi map toạ độ đó vào bbox
+// từng DÒNG mà Tesseract trả về (cùng cấu trúc data.blocks mà
+// reorderTwoColumnText() đã dùng) — dòng nào phần lớn diện tích nằm trong
+// vùng vàng thì được đánh dấu highlighted:true, đi theo đúng "kênh" tín
+// hiệu mà parser (scanRangeFlags/trySplit...) đã biết xử lý cho file DOCX.
+//
+// Để nhẹ và nhanh (ảnh full-res có thể vài triệu pixel), không lưu mask ở
+// độ phân giải gốc — downsample về 1 lưới ô vuông ~4px/ô, mỗi ô chỉ lưu
+// true/false đã đủ chính xác để so khớp với bbox dòng chữ (thường cao
+// 20-40px ở ảnh đã upscale).
+const HL_CELL = 4; // kích thước 1 ô lưới (px, theo ảnh GỐC — chưa upscale của preprocessForOcr)
+
+async function detectYellowHighlightMask(blob) {
+  try {
+    const bitmap = await createImageBitmap(blob);
+    const w = bitmap.width, h = bitmap.height;
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close?.();
+    const { data: px } = ctx.getImageData(0, 0, w, h);
+    canvas.width = 0; canvas.height = 0;
+
+    const cols = Math.ceil(w / HL_CELL);
+    const rows = Math.ceil(h / HL_CELL);
+    const grid = new Uint8Array(cols * rows);
+
+    for (let gy = 0; gy < rows; gy++) {
+      for (let gx = 0; gx < cols; gx++) {
+        const x0 = gx * HL_CELL, y0 = gy * HL_CELL;
+        const x1 = Math.min(w, x0 + HL_CELL), y1 = Math.min(h, y0 + HL_CELL);
+        let yellowCount = 0, total = 0;
+        for (let y = y0; y < y1; y++) {
+          for (let x = x0; x < x1; x++) {
+            const i = (y * w + x) * 4;
+            const r = px[i], g = px[i+1], b = px[i+2];
+            total++;
+            // Highlighter vàng đặc trưng: R và G đều cao, B rõ ràng thấp hơn
+            // hẳn (loại bỏ trắng/xám nơi B ≈ R ≈ G, và loại chữ đen nơi mọi
+            // kênh đều thấp). Ngưỡng nới để chấp nhận vàng nhạt (ảnh chụp
+            // sáng quá) lẫn vàng đậm (ảnh chụp tối/ám màu).
+            if (r > 180 && g > 150 && (r - b) > 40 && (g - b) > 30) yellowCount++;
+          }
+        }
+        grid[gy * cols + gx] = (total > 0 && yellowCount / total > 0.35) ? 1 : 0;
+      }
+    }
+    return { grid, cols, rows, w, h };
+  } catch (e) {
+    // Best-effort: nếu phân tích màu lỗi vì bất kỳ lý do gì (ảnh hỏng, hết
+    // bộ nhớ...), coi như không có highlight — không được làm hỏng cả lượt OCR.
+    return null;
+  }
+}
+
+// Trả về tỉ lệ diện tích 1 bbox (toạ độ theo ảnh ĐÃ preprocessForOcr — có
+// thể đã bị upscale so với ảnh gốc dùng để build mask) được phủ bởi vùng
+// vàng, dùng scaleX/scaleY để quy đổi bbox về hệ toạ độ của mask gốc.
+function bboxYellowRatio(mask, bbox, scaleX, scaleY) {
+  if (!mask || !bbox) return 0;
+  const x0 = Math.max(0, Math.floor((bbox.x0 / scaleX) / HL_CELL));
+  const y0 = Math.max(0, Math.floor((bbox.y0 / scaleY) / HL_CELL));
+  const x1 = Math.min(mask.cols, Math.ceil((bbox.x1 / scaleX) / HL_CELL));
+  const y1 = Math.min(mask.rows, Math.ceil((bbox.y1 / scaleY) / HL_CELL));
+  if (x1 <= x0 || y1 <= y0) return 0;
+  let hit = 0, total = 0;
+  for (let gy = y0; gy < y1; gy++) {
+    for (let gx = x0; gx < x1; gx++) {
+      total++;
+      if (mask.grid[gy * mask.cols + gx]) hit++;
+    }
+  }
+  return total > 0 ? hit / total : 0;
+}
+
+// ── Tiền xử lý ảnh trước khi OCR ──────────────────────────────────────────
+// Tesseract nhận diện chính xác hơn nhiều trên ảnh grayscale, tương phản cao,
+// và đủ lớn (chữ nhỏ hơn ~20-25px cao dễ bị đọc sai). Ảnh chụp bằng điện
+// thoại (ánh sáng không đều, hơi mờ) hoặc screenshot độ phân giải thấp là
+// hai trường hợp cải thiện rõ rệt nhất với các bước dưới đây.
+// Pipeline: upscale (nếu ảnh nhỏ) → grayscale (luminance) → contrast stretch
+// (kéo dải sáng-tối về full range dựa trên percentile thực tế của ảnh, thay
+// vì threshold cố định — vẫn ổn với ảnh chụp thiếu sáng/thừa sáng) → nhẹ
+// nhàng sharpen bằng unsharp mask đơn giản để nét chữ rõ hơn sau khi resize.
+const OCR_MIN_DIM = 1600; // chiều dài cạnh dài tối thiểu trước khi OCR
+
+async function preprocessForOcr(blob) {
+  const bitmap = await createImageBitmap(blob);
+  let { width: w, height: h } = bitmap;
+
+  // Upscale ảnh quá nhỏ (screenshot bị nén, ảnh chụp xa) — chữ nhỏ là
+  // nguyên nhân phổ biến nhất gây Tesseract đọc sai ký tự giống nhau
+  // (rn <-> m, cl <-> d, v.v.).
+  const longSide = Math.max(w, h);
+  const scale = longSide < OCR_MIN_DIM ? OCR_MIN_DIM / longSide : 1;
+  w = Math.round(w * scale);
+  h = Math.round(h * scale);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  bitmap.close?.();
+
+  const imgData = ctx.getImageData(0, 0, w, h);
+  const px = imgData.data;
+  const n = w * h;
+  const gray = new Uint8ClampedArray(n);
+
+  // Grayscale bằng trọng số luminance chuẩn (ITU-R BT.601) — cho kết quả
+  // gần với cách mắt người và Tesseract "nhìn" độ sáng hơn là trung bình
+  // cộng đơn giản của R/G/B.
+  for (let i = 0, j = 0; i < n; i++, j += 4) {
+    gray[i] = 0.299 * px[j] + 0.587 * px[j + 1] + 0.114 * px[j + 2];
+  }
+
+  // Contrast stretch theo percentile thực tế (không phải min/max tuyệt đối,
+  // để vài pixel nhiễu cực sáng/cực tối không kéo lệch cả dải) — histogram
+  // 256 mức rồi lấy ngưỡng ở 1% và 99%.
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < n; i++) hist[gray[i]]++;
+  const lowCut = Math.floor(n * 0.01);
+  const highCut = Math.floor(n * 0.01);
+  let lo = 0, acc = 0;
+  for (; lo < 255; lo++) { acc += hist[lo]; if (acc > lowCut) break; }
+  let hi = 255; acc = 0;
+  for (; hi > 0; hi--) { acc += hist[hi]; if (acc > highCut) break; }
+  const range = Math.max(1, hi - lo);
+
+  for (let i = 0, j = 0; i < n; i++, j += 4) {
+    let v = ((gray[i] - lo) * 255) / range;
+    v = v < 0 ? 0 : v > 255 ? 255 : v;
+    px[j] = px[j + 1] = px[j + 2] = v;
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  const outBlob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+  canvas.width = 0; canvas.height = 0;
+  // Trả kèm `scale` (hệ số upscale áp dụng, 1 nếu ảnh đã đủ lớn) — cần để
+  // quy đổi bbox dòng chữ (tính theo ảnh ĐÃ preprocess, có thể lớn hơn ảnh
+  // gốc) về đúng hệ toạ độ của mask highlight vàng (tính theo ảnh GỐC).
+  return { blob: outBlob, scale };
+}
+
+// ── Layout Analysis: phát hiện & sửa thứ tự đọc cho ảnh scan 2 cột ─────────
+// Đề thi in thường chia 2 cột để tiết kiệm giấy. Tesseract (kể cả PSM 6)
+// đọc theo thứ tự dòng-pixel-từ-trên-xuống, nên với ảnh 2 cột thật, nó trả
+// về text bị TRỘN: nửa dòng cột trái rồi ngay lập tức nửa dòng cột phải
+// cùng hàng ngang, dòng nào cũng đứt giữa chừng — làm hỏng gần như toàn bộ
+// câu hỏi. reorderTwoColumnText dùng toạ độ bbox của từng "line" (Tesseract
+// v5 trả trong data.blocks[].paragraphs[].lines[]) để:
+//   1. Tìm 1 khoảng trống dọc (gutter) mà PHẦN LỚN các dòng đều tránh —
+//      đặc trưng của ranh giới 2 cột thật.
+//   2. Nếu tìm thấy: gom line có x0 < gutter vào cột trái, còn lại vào cột
+//      phải; xuất cột trái (sắp theo y) trước, rồi đến cột phải.
+//   3. Nếu KHÔNG tìm thấy gutter rõ ràng (ảnh 1 cột bình thường — trường
+//      hợp phổ biến nhất), trả nguyên data.text như cũ — không đổi hành vi.
+// v2: giờ trả về CẢ text đã sắp thứ tự CẢ mảng các dòng theo đúng thứ tự đó
+// (kèm bbox) — mảng dòng này được ocrWithTesseractMainThread() dùng để gắn
+// cờ highlighted (tô vàng) cho từng dòng bằng bboxYellowRatio(), việc mà
+// trước đây không thể làm được vì hàm chỉ trả ra 1 chuỗi text phẳng, mất
+// hết toạ độ. Chữ ký hàm cũ (chỉ nhận data, trả text) được giữ tương thích
+// bằng cách bọc ở dưới — orderedLinesFromOcrData() mới là nơi chứa logic.
+function orderedLinesFromOcrData(data) {
+  const fallbackText = data.text || '';
+  const fallbackLines = fallbackText.split(/\r?\n/).map(t => ({ text: t, bbox: null }));
+  try {
+    const blocks = data.blocks;
+    if (!blocks || !blocks.length) return fallbackLines;
+
+    // Duyệt ĐỆ QUY thay vì giả định cứng đường dẫn block.paragraphs[].lines[]
+    // — cấu trúc JSON chi tiết của Tesseract.js có thể lệch nhẹ giữa các
+    // bản vá nhỏ. Tiêu chí nhận diện 1 node là "line" (không phải word/
+    // symbol/paragraph): có bbox + text, VÀ có mảng con "words" (nếu có),
+    // NHƯNG bản thân không chứa mảng con "lines" (để không lấy nhầm cả
+    // paragraph cha làm 1 "line"). Nếu gặp cấu trúc lạ hoàn toàn không khớp
+    // tiêu chí này ở đâu cả, mảng lines rỗng → fallback tự nhiên bên dưới.
+    const lines = [];
+    function walk(node) {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) { node.forEach(walk); return; }
+      const hasOwnLines = Array.isArray(node.lines) && node.lines.length;
+      const looksLikeLine = node.bbox && typeof node.text === 'string' && node.text.trim() && !hasOwnLines
+        && (Array.isArray(node.words) || node.words === undefined);
+      if (looksLikeLine && !Array.isArray(node.paragraphs) && !Array.isArray(node.blocks)) {
+        lines.push({ text: node.text.trim(), bbox: node.bbox });
+        return; // đã nhận là line — không đi sâu thêm vào words/symbols bên trong
+      }
+      for (const key of Object.keys(node)) {
+        if (key === 'bbox') continue; // bbox tự nó không phải node cần duyệt tiếp
+        walk(node[key]);
+      }
+    }
+    walk(blocks);
+    if (lines.length < 6) return lines.length ? lines : fallbackLines; // quá ít dòng để phán đoán layout đáng tin cậy
+
+    const pageWidth = Math.max(...lines.map(l => l.bbox.x1));
+    if (!pageWidth) return lines;
+
+    // Dòng "full-width thật" (vd tiêu đề đề thi, dòng "Họ tên: ...") trải
+    // gần hết chiều rộng trang — băng qua MỌI ứng viên gutter trong khoảng
+    // 35%-65%, không riêng gì 1 vị trí cụ thể. Đây không thuộc cột nào cả,
+    // nên tách riêng trước khi tính tỷ lệ crossing, để không bị hiểu nhầm
+    // là "không có gutter rõ ràng" chỉ vì có vài dòng header/tiêu đề.
+    const gutterCandidates = [];
+    for (let frac = 0.35; frac <= 0.65; frac += 0.02) gutterCandidates.push(pageWidth * frac);
+    const isFullWidth = l => gutterCandidates.every(gx => l.bbox.x0 < gx - 10 && l.bbox.x1 > gx + 10);
+    const headerLines = lines.filter(isFullWidth).sort((a,b) => a.bbox.y0 - b.bbox.y0);
+    const bodyLines = lines.filter(l => !isFullWidth(l));
+    if (bodyLines.length < 6) return lines; // sau khi bỏ header, còn quá ít dòng để phán đoán — giữ thứ tự gốc
+
+    // Thử các vị trí gutter ứng viên quanh khoảng giữa trang (35%-65% chiều
+    // rộng) — không cố định đúng 50% vì cột trái/phải hiếm khi bằng nhau
+    // tuyệt đối. Với mỗi ứng viên, đếm bao nhiêu dòng THÂN BÀI "băng qua" nó
+    // (bbox trải cả 2 bên) — gutter thật sẽ có RẤT ÍT dòng băng qua vì đó
+    // chính là khoảng trắng giữa 2 cột.
+    let bestGutter = null, bestCross = Infinity;
+    for (const gx of gutterCandidates) {
+      const crossing = bodyLines.filter(l => l.bbox.x0 < gx - 10 && l.bbox.x1 > gx + 10).length;
+      if (crossing < bestCross) { bestCross = crossing; bestGutter = gx; }
+    }
+
+    // Điều kiện chấp nhận layout 2 cột: gutter tốt nhất có RẤT ít dòng THÂN
+    // BÀI băng qua (dưới 8%) VÀ có đủ dòng ở CẢ 2 bên (không phải ảnh 1 cột
+    // mà chỉ có vài dòng lạc sang bên kia do OCR lệch). Ngưỡng cố tình đặt
+    // chặt — thà bỏ lỡ vài ảnh 2 cột thật còn hơn phá hỏng ảnh 1 cột bình
+    // thường (đa số các trường hợp thực tế).
+    const crossRatio = bestCross / bodyLines.length;
+    const leftCount  = bodyLines.filter(l => l.bbox.x0 < bestGutter).length;
+    const rightCount = bodyLines.length - leftCount;
+    const minSideCount = Math.max(3, Math.floor(bodyLines.length * 0.25));
+    if (crossRatio > 0.08 || leftCount < minSideCount || rightCount < minSideCount) {
+      return lines; // không đủ tin cậy đây là layout 2 cột thật — giữ nguyên thứ tự gốc
+    }
+
+    const left  = bodyLines.filter(l => l.bbox.x0 < bestGutter).sort((a,b) => a.bbox.y0 - b.bbox.y0);
+    const right = bodyLines.filter(l => l.bbox.x0 >= bestGutter).sort((a,b) => a.bbox.y0 - b.bbox.y0);
+    return [...headerLines, ...left, ...right];
+  } catch (e) {
+    // Best-effort: bất kỳ lỗi nào trong bước phân tích layout đều fallback
+    // về thứ tự dòng gốc thay vì làm hỏng toàn bộ lượt OCR.
+    return fallbackLines;
+  }
+}
+
+// Giữ chữ ký cũ (trả về text thuần) cho bất kỳ chỗ nào khác còn gọi tới —
+// chỉ là 1 lớp mỏng gọi orderedLinesFromOcrData() rồi join lại.
+function reorderTwoColumnText(data) {
+  return orderedLinesFromOcrData(data).map(l => l.text).join('\n');
+}
+
+async function ocrWithTesseractMainThread(selected, prog) {
+  setOcrProgressBar(prog, 0, 'downloading tesseract.js');
+  await loadScriptOnce(LIB_URLS.tesseract, (pct) => {
+    if (pct == null) {
+      // CDN không trả Content-Length nên không tính được % — vẫn hiện
+      // trạng thái "đang tải" để người dùng biết máy không bị treo.
+      setOcrProgress(prog, 'loader', 'Đang tải thư viện Tesseract.js...');
+    } else {
+      setOcrProgressBar(prog, pct, 'downloading tesseract.js');
+    }
+  });
+
+  // Tesseract.js v5 đổi signature thành createWorker(langs, oem, options) —
+  // truyền sai object {logger} vào vị trí "langs" (như bản cũ) khiến thư viện
+  // cố hiểu object đó là tên ngôn ngữ, không bao giờ resolve và logger không
+  // bao giờ được gọi → UI bị treo y nguyên ở dòng "Đang tải thư viện..." dù
+  // file đã tải xong 100%. Phải truyền 'vie' và oem ở đúng vị trí.
+  //
+  // Ngôn ngữ lấy từ lựa chọn của người dùng (nhóm Auto/Anh/Việt trong
+  // FAB menu, xem setOcrLang()) — mặc định 'auto' = 'eng+vie'. Chạy cả 2
+  // ngôn ngữ cùng lúc an toàn nhất cho đề trộn Anh-Việt, nhưng nếu biết chắc
+  // ảnh chỉ có 1 ngôn ngữ thì chọn riêng 'eng' hoặc 'vie' sẽ nhanh hơn và đôi
+  // khi chính xác hơn (Tesseract không phải cân nhắc giữa 2 bộ ký tự cho mỗi
+  // vùng ảnh). Trước đây cố định 'vie' khiến đề tiếng Anh thuần (Pronunciation,
+  // Stress, Vocabulary...) dễ bị đoán sai/dính chữ/rớt cả dòng.
+  const worker = await Tesseract.createWorker(OCR_LANG_MAP[ocrLang] || 'eng+vie', 1, {
+    logger: m => {
+      const pct = m.progress != null ? Math.round(m.progress * 100) : 0;
+      setOcrProgressBar(prog, pct, m.status || '');
+    }
+  });
+
+  // PSM 6 ("Assume a single uniform block of text") thường chính xác hơn
+  // AUTO (mặc định) cho ảnh đề thi đã crop gọn quanh vùng câu hỏi — AUTO
+  // phải tự đoán layout (cột báo, ảnh xen kẽ...) và hay chia sai khối trên
+  // ảnh chụp điện thoại. Nếu người dùng chụp cả trang giấy có margin lớn/
+  // nhiều cột thật, PSM 4 ("single column") là phương án dự phòng hợp lý
+  // hơn nhưng 6 vẫn là lựa chọn an toàn nhất cho phần lớn ảnh đề trắc nghiệm.
+  await worker.setParameters({
+    tessedit_pageseg_mode: '6',
+    // preserve_interword_spaces giữ khoảng trắng giữa các đáp án A/B/C/D
+    // khi chúng nằm trên cùng một dòng — tránh bị dính chữ khi ghép lại.
+    preserve_interword_spaces: '1',
+  });
+
+  let combined = '';
+  // allLines: mảng dòng {text, highlighted} theo đúng thứ tự đọc, GỘP qua
+  // mọi ảnh đã chọn — dùng để build ocrParas ở runOcr() với run mang cờ
+  // highlighted thay vì chỉ ghép text phẳng như trước.
+  const allLines = [];
+  for (let i = 0; i < selected.length; i++) {
+    // Reset bar cho mỗi ảnh
+    const fill = prog.querySelector('.ocr-pbar-fill');
+    if (fill) fill.style.width = '0%';
+    const lbl = prog.querySelector('.ocr-pbar-label');
+    if (lbl) lbl.textContent = selected.length > 1 ? `Ảnh ${i+1}/${selected.length}` : '';
+
+    // Phát hiện vùng highlight màu vàng trên ẢNH GỐC (còn màu) TRƯỚC khi
+    // preprocessForOcr chuyển sang grayscale — làm song song với bước tiền
+    // xử lý bên dưới vì 2 việc độc lập nhau (đều đọc, không sửa, blob gốc).
+    const maskPromise = detectYellowHighlightMask(selected[i].blob);
+
+    // Tiền xử lý (grayscale + tăng tương phản + upscale nếu ảnh nhỏ) trước
+    // khi đưa vào Tesseract — cải thiện đáng kể với ảnh chụp thiếu sáng
+    // hoặc screenshot độ phân giải thấp. Nếu tiền xử lý lỗi vì lý do nào đó
+    // (ảnh hỏng, hết bộ nhớ...), fallback về ảnh gốc thay vì làm hỏng cả
+    // lượt quét.
+    let ocrBlob = selected[i].blob;
+    let ocrScale = 1;
+    try {
+      const pre = await preprocessForOcr(selected[i].blob);
+      ocrBlob = pre.blob;
+      ocrScale = pre.scale;
+    } catch (e) {
+      console.warn('preprocessForOcr thất bại, dùng ảnh gốc:', e);
+    }
+
+    const mask = await maskPromise;
+
+    // v5 không còn nhận { lang: 'vie' } ở recognize() — ngôn ngữ đã được
+    // cố định khi tạo worker ở trên (đổi ngôn ngữ giữa chừng phải dùng
+    // worker.reinitialize(), không cần ở đây vì luôn chỉ dùng 'vie').
+    // Yêu cầu thêm 'blocks' để có toạ độ bbox từng dòng — cần cho bước phát
+    // hiện layout 2 cột VÀ bước gắn cờ highlighted ngay dưới đây (mặc định
+    // v5 không trả blocks để tiết kiệm bộ nhớ nếu không khai báo rõ).
+    const { data } = await worker.recognize(ocrBlob, {}, { text: true, blocks: true });
+    const orderedLines = orderedLinesFromOcrData(data);
+
+    // bbox của mỗi dòng được Tesseract tính theo ocrBlob (đã upscale theo
+    // ocrScale so với ảnh gốc dùng để build mask) — quy đổi lại bằng cách
+    // chia cho ocrScale trước khi so khớp với lưới ô vuông của mask.
+    for (const line of orderedLines) {
+      const ratio = line.bbox ? bboxYellowRatio(mask, line.bbox, ocrScale, ocrScale) : 0;
+      // Ngưỡng 25%: đủ để bắt dòng có 1 phần lớn được tô vàng (kể cả khi
+      // highlighter lem ra ngoài chữ hoặc chỉ tô 1 phần đáp án), nhưng đủ
+      // cao để không dính nhầm những dòng chỉ đi NGANG QUA rìa vùng vàng.
+      allLines.push({ text: line.text, highlighted: ratio > 0.25 });
+    }
+    combined += orderedLines.map(l => l.text).join('\n') + '\n';
+  }
+  await worker.terminate();
+
+  // Hiện 100% khi xong
+  const fill = prog.querySelector('.ocr-pbar-fill');
+  if (fill) fill.style.width = '100%';
+
+  return { combined, allLines };
+}
+
+
+function toLearnsyText(qs) {
+  // Đánh số LẠI THEO TỪNG SECTION thay vì đánh số tuần tự toàn mảng — nếu đề
+  // gồm nhiều Exercise/Part, mỗi phần tự đếm 1, 2, 3... của riêng nó (khớp
+  // với đề gốc), thay vì bị dồn liên tục qua ranh giới exercise (vd Exercise 1
+  // có 10 câu rồi Exercise 2 lại bắt đầu từ 11 dù đề gốc ghi lại từ 1).
+  // q.section === undefined (không rõ nguồn) vẫn đếm tuần tự như cũ để không
+  // đổi hành vi với các câu không xác định được section.
+  let lastSection;
+  let localIdx = 0;
+  const out = [];
+  qs.forEach((q) => {
+    if (q.section !== lastSection) {
+      if (q.section) out.push(`--- ${q.section} ---`);
+      lastSection = q.section;
+      localIdx = 0;
+    }
+    localIdx++;
+    const opts = q.opts.map(o=>`${o.key}. ${o.text}`).join('\n');
+    const ans  = q.ans ? `Answer: ${q.ans}` : '';
+    out.push([`${localIdx}. ${q.text}`, opts, ans].filter(Boolean).join('\n'));
+  });
+  return out.join('\n\n');
+}
+
+const BADGE = {
+  'underline':     ['badge-u','Gạch chân'],
+  'bold':          ['badge-b','Bold'],
+  'bold+underline':['badge-u','Bold+GC'],
+  'exclude':       ['badge-s','Loại trừ'],
+  'text':          ['badge-t','Answer:'],
+  'colored':       ['badge-b','Màu chữ'],
+  'highlighted':   ['badge-t','Highlight'],
+  'manual':        ['badge-b','Thủ công','hand'],
+};
+
+// ── syncFromAllQ: allQ là Single Source of Truth ──────────────────────────
+// Mọi thay đổi từ Preview (sửa text, chọn đáp án) đều ghi thẳng vào allQ,
+// rồi gọi hàm này để đồng bộ lại outputBox + stats + localStorage.
+// Không dùng split('\n\n') trên chuỗi thô — tránh lệch chỉ số khi câu hỏi
+// có dòng trống bên trong.
+function syncFromAllQ() {
+  const box = document.getElementById('outputBox');
+  if (box) box.textContent = toLearnsyText(allQ);
+  _updateStats();
+  saveToLocalStorage();
+}
+
+// Alias để không phá các call-site cũ bên trong buildCard / render
+function patchOutputLine(_idx) { syncFromAllQ(); }
+function syncOutputBox()       { syncFromAllQ(); }
+
+function _updateStats() {
+  const noAns = allQ.filter(q=>!q.ans).length;
+  document.getElementById('sTOTAL').textContent = allQ.length;
+  document.getElementById('sOK').textContent    = allQ.length - noAns;
+  document.getElementById('sNA').textContent    = noAns;
+}
+
+// ── buildCard: builds a single preview card DOM node (used by render + replaceWith) ──
+function buildCard(q, idx) {
+  const card = el('div','q-card');
+  const meta = el('div','q-meta');
+  const num  = el('div','q-num'); num.textContent = `Câu ${idx+1}`;
+  meta.appendChild(num);
+  if (q.source === 'tesseract') {
+    const ob = el('span','detect-badge badge-ocr'); ob.innerHTML = ICONS.camera + ' Tesseract';
+    meta.appendChild(ob);
+  } else if (q.source === 'pdf') {
+    const ob = el('span','detect-badge badge-pdf'); ob.innerHTML = ICONS.pdf + ' PDF';
+    meta.appendChild(ob);
+  }
+  if (q.how && BADGE[q.how]) {
+    const [cls,lbl,iconName] = BADGE[q.how];
+    const b = el('span',`detect-badge ${cls}`); b.innerHTML = (iconName ? ICONS[iconName] + ' ' : '') + lbl;
+    meta.appendChild(b);
+  } else if (!q.ans) {
+    const b = el('span','detect-badge badge-n'); b.textContent = 'Chưa xác định';
+    meta.appendChild(b);
+  }
+  if (q.sharedStem) {
+    // Đề bài của câu này được TỰ ĐỘNG mượn từ đoạn văn đứng trước (không
+    // phải câu tự gõ đề riêng) — báo cho giáo viên biết để họ để ý kiểm tra
+    // lại, vì thuật toán có thể gán nhầm đoạn văn không liên quan. Click để
+    // bỏ đánh dấu (giữ nguyên text, chỉ tắt cờ) khi thuật toán gán nhầm.
+    const sb = el('span','detect-badge badge-shared');
+    sb.innerHTML = ICONS.layers + ' Đề chung';
+    sb.title = 'Đề bài được tự động lấy từ đoạn văn đứng trước — click để bỏ đánh dấu';
+    sb.style.cursor = 'pointer';
+    sb.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      q.sharedStem = false;
+      const newCard = buildCard(q, idx);
+      card.replaceWith(newCard);
+      patchOutputLine(idx);
+    });
+    meta.appendChild(sb);
+  }
+  if (q.ocrSuspicious) {
+    // Đề bài hoặc đáp án còn ký tự mà Tesseract không nhận diện chắc chắn
+    // (công thức toán, ký hiệu đặc biệt, ảnh mờ/nghiêng...) — đây là giới
+    // hạn của OCR text-only, không thể tự sửa đúng, chỉ có thể cảnh báo để
+    // giáo viên đối chiếu lại với ảnh gốc. Click để tắt cảnh báo sau khi đã
+    // soát xong (giữ nguyên nội dung, chỉ tắt cờ).
+    const wb = el('span','detect-badge badge-warn-ocr');
+    wb.innerHTML = ICONS.alertTriangle + ' Cần soát lại';
+    wb.title = 'Có ký tự OCR không chắc chắn (công thức toán/ký hiệu đặc biệt/ảnh mờ) — đối chiếu lại với ảnh gốc. Click để bỏ cảnh báo.';
+    wb.style.cursor = 'pointer';
+    wb.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      q.ocrSuspicious = false;
+      const newCard = buildCard(q, idx);
+      card.replaceWith(newCard);
+      patchOutputLine(idx);
+    });
+    meta.appendChild(wb);
+  }
+  card.appendChild(meta);
+
+  // Hint bar
+  const hint = el('div','edit-hint'); hint.innerHTML = ICONS.edit + ' Click vào nội dung để sửa — click vào chữ cái A/B/C/D để chọn đáp án đúng'; card.appendChild(hint);
+
+  // q-text — contenteditable
+  const qt = el('div','q-text');
+  qt.setAttribute('contenteditable','true');
+  qt.setAttribute('spellcheck','false');
+  qt.textContent = q.text;
+  qt.addEventListener('blur', () => { q.text = qt.textContent.trim(); patchOutputLine(idx); });
+  card.appendChild(qt);
+
+  const opts = el('div','opts');
+  q.opts.forEach(o => {
+    const d = el('div','opt' + (q.ans===o.key?' correct':'') + (o.s?' struck':''));
+
+    const badge = el('span','opt-key-badge' + (q.ans === o.key ? ' is-selected' : ''));
+    badge.textContent = o.key;
+    badge.title = 'Chạm để chọn làm đáp án đúng';
+    badge.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      q.ans = (q.ans === o.key) ? null : o.key;
+      q.how = q.ans ? 'manual' : null;
+      const newCard = buildCard(q, idx);
+      card.replaceWith(newCard);
+      patchOutputLine(idx);
+    });
+
+    const textSpan = document.createElement('span');
+    textSpan.className = 'opt-text';
+    textSpan.setAttribute('contenteditable','true');
+    textSpan.setAttribute('spellcheck','false');
+    textSpan.textContent = `${o.key}. ${o.text}`;
+    textSpan.addEventListener('blur', () => {
+      o.text = textSpan.textContent.trim().replace(/^[A-Ea-e][\.\)]\s*/, '');
+      patchOutputLine(idx);
+    });
+    textSpan.addEventListener('click', ev => ev.stopPropagation());
+    d.appendChild(badge); d.appendChild(textSpan);
+
+    // Nút xóa đáp án — chỉ hiện khi câu hỏi còn > 2 đáp án, để tránh xóa
+    // xuống dưới mức tối thiểu (1 đáp án thì không còn ý nghĩa trắc nghiệm).
+    if (q.opts.length > 2) {
+      const delBtn = el('span','opt-del-btn');
+      delBtn.innerHTML = ICONS.trash;
+      delBtn.title = 'Xóa đáp án này';
+      delBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        removeOption(q, o.key);
+        const newCard = buildCard(q, idx);
+        card.replaceWith(newCard);
+        patchOutputLine(idx);
+      });
+      d.appendChild(delBtn);
+    }
+
+    opts.appendChild(d);
+  });
+
+  // Nút "+ Thêm đáp án" — thêm 1 lựa chọn mới ngay sau đáp án cuối cùng.
+  // Giới hạn tối đa 8 đáp án (A→H) để không phá layout thẻ trên màn hình
+  // nhỏ; quá 8 lựa chọn trắc nghiệm gần như không có trong thực tế.
+  const MAX_OPTS = 8;
+  const addBtn = el('div','opt-add-btn');
+  addBtn.innerHTML = ICONS.plus + ' Thêm đáp án';
+  if (q.opts.length >= MAX_OPTS) {
+    addBtn.setAttribute('disabled', 'true');
+    addBtn.innerHTML = ICONS.plus + ' Đã đạt tối đa 8 đáp án';
+  } else {
+    addBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      addOption(q);
+      const newCard = buildCard(q, idx);
+      card.replaceWith(newCard);
+      patchOutputLine(idx);
+    });
+  }
+  opts.appendChild(addBtn);
+
+  const pickHint = el('div','pick-ans-hint');
+  pickHint.innerHTML = q.ans
+    ? `Đáp án: ${q.ans} — click vào chữ cái để thay đổi`
+    : ICONS.alertTriangle + ' Chưa xác định — click vào A/B/C/D để chọn';
+  opts.appendChild(pickHint);
+  card.appendChild(opts);
+  return card;
+}
+
+// Xóa 1 đáp án khỏi câu hỏi rồi đánh lại chữ cái (key) các đáp án còn lại
+// theo đúng thứ tự A, B, C... để không có lỗ hổng như "A, C, D" (dễ gây
+// nhầm lẫn khi xuất ra Learnsy). Nếu đáp án bị xóa đang là đáp án đúng,
+// q.ans được reset về null — người dùng cần chọn lại đáp án đúng thủ công.
+function removeOption(q, key) {
+  const filtered = q.opts.filter(o => o.key !== key);
+  const wasCorrectRemoved = q.ans === key;
+  q.opts = filtered.map((o, i) => ({ ...o, key: String.fromCharCode(65 + i) }));
+  if (wasCorrectRemoved) {
+    q.ans = null; q.how = null;
+  } else if (q.ans) {
+    // Đáp án đúng vẫn còn nhưng có thể đã đổi chữ cái sau khi re-key — tìm
+    // lại theo vị trí gốc thay vì theo key cũ.
+    const stillCorrect = filtered.findIndex(o => o.key === q.ans);
+    // filtered chưa re-key nên o.key ở đây vẫn là key CŨ; dùng index để map
+    // sang key MỚI tương ứng sau khi re-key ở trên.
+    if (stillCorrect !== -1) q.ans = String.fromCharCode(65 + stillCorrect);
+  }
+}
+
+// Thêm 1 đáp án trống mới vào cuối danh sách, với chữ cái kế tiếp theo thứ
+// tự bảng chữ cái (A, B, C... H tối đa). Đáp án mới luôn để trống nội dung
+// để người dùng tự điền — không đoán hộ nội dung vì dễ sai và gây nhiễu.
+function addOption(q) {
+  const nextKey = String.fromCharCode(65 + q.opts.length);
+  q.opts.push({ key: nextKey, text: '', u: false, b: false, s: false, c: false, h: false });
+}
+
+// ── Câu không có đề: hỏi lần lượt, đề vừa nhập tự áp dụng cho các câu ──────
+// liền kề ngay sau đó cũng thiếu đề (tới khi gặp câu có đề riêng hoặc đã
+// được hỏi/skip trước đó). qs được truyền là allQ hiện tại — sửa trực tiếp
+// trên các object q trong mảng này (tham chiếu), không tạo bản sao, để các
+// thay đổi phản ánh ngay vào allQ/localStorage khi render() chạy lại.
+let promptQueueActive = false;
+let promptQueueQs = null;
+let promptQueueIdx = -1;
+
+function promptForMissingStems(qs) {
+  promptQueueActive = true;
+  promptQueueQs = qs;
+  promptQueueIdx = -1;
+  advancePromptQueue();
+}
+
+function advancePromptQueue() {
+  const qs = promptQueueQs;
+  if (!qs) { promptQueueActive = false; return; }
+  let idx = promptQueueIdx + 1;
+  while (idx < qs.length && !qs[idx].needsPrompt) idx++;
+  if (idx >= qs.length) {
+    // Hết câu cần hỏi — đóng popup, đồng bộ lại output/preview.
+    promptQueueActive = false;
+    promptQueueQs = null;
+    promptQueueIdx = -1;
+    document.getElementById('promptModalBackdrop').style.display = 'none';
+    if (typeof syncFromAllQ === 'function') syncFromAllQ();
+    render(allQ);
+    return;
+  }
+  promptQueueIdx = idx;
+  const q = qs[idx];
+  document.getElementById('promptQNum').textContent = idx + 1;
+  const input = document.getElementById('promptQInput');
+  input.value = '';
+  document.getElementById('promptModalBackdrop').style.display = 'flex';
+  setTimeout(() => input.focus(), 50);
+}
+
+function submitQuestionPrompt() {
+  const qs = promptQueueQs;
+  if (!qs || promptQueueIdx < 0) return;
+  const stem = document.getElementById('promptQInput').value.trim();
+  if (!stem) return; // yêu cầu nhập gì đó — dùng "Bỏ qua câu này" nếu không có đề
+  // Áp dụng đề này cho câu hiện tại VÀ mọi câu liền sau đó cũng đang thiếu
+  // đề (needsPrompt === true), dừng lại khi gặp câu đã có đề riêng.
+  let i = promptQueueIdx;
+  while (i < qs.length && qs[i].needsPrompt) {
+    qs[i].text = stem;
+    qs[i].needsPrompt = false;
+    i++;
+  }
+  advancePromptQueue();
+}
+
+function skipQuestionPrompt() {
+  const qs = promptQueueQs;
+  if (!qs || promptQueueIdx < 0) return;
+  qs[promptQueueIdx].needsPrompt = false;
+  // Bỏ qua chỉ áp dụng cho đúng câu này — không lan sang câu sau, vì
+  // "bỏ qua" không mang nghĩa là câu sau cũng nên bỏ qua.
+  advancePromptQueue();
+}
+
+// Áp dụng 1 đề bài cho TOÀN BỘ các câu còn đang needsPrompt trong file —
+// không chỉ nhóm liền kề với câu hiện tại. Dùng khi cả file thực chất chỉ
+// dùng chung 1 đề duy nhất cho mọi câu không có đề riêng (khác với
+// submitQuestionPrompt(), vốn chỉ lan sang các câu liền kề).
+function submitQuestionPromptToAll() {
+  const qs = promptQueueQs;
+  if (!qs || promptQueueIdx < 0) return;
+  const stem = document.getElementById('promptQInput').value.trim();
+  if (!stem) return;
+  for (const q of qs) {
+    if (q.needsPrompt) { q.text = stem; q.needsPrompt = false; }
+  }
+  advancePromptQueue();
+}
+
+function render(qs) {
+  const emptyBox = document.getElementById('emptyBox');
+
+  if (!qs.length) {
+    // Empty state rõ ràng: không suy đoán im lặng khi engine không đọc
+    // được câu nào. Xây bằng DOM API (createElement/textContent) thay vì
+    // innerHTML — nội dung ở đây có thể phản ánh câu chữ từ file người
+    // dùng upload nên không ghép chuỗi HTML trực tiếp.
+    ['stats','warnBox','outputBox','actions','qPreview','tabRow','outLabel'].forEach(hideEl);
+    emptyBox.innerHTML = '';
+    const iconWrap = document.createElement('div');
+    iconWrap.innerHTML = ICONS.alertTriangle; // ICONS.* là SVG tĩnh hardcode, an toàn để innerHTML
+    iconWrap.firstElementChild?.classList.add('icon');
+    const title = document.createElement('div');
+    title.className = 'empty-title';
+    title.textContent = 'Không tìm thấy câu hỏi nào';
+    const msg = document.createElement('div');
+    msg.className = 'empty-msg';
+    msg.textContent = 'File đã đọc được nhưng không nhận diện ra định dạng câu hỏi quen thuộc. Hãy kiểm tra lại: mỗi câu nên bắt đầu bằng một trong các dạng dưới đây, ở đầu dòng riêng.';
+    const hint = document.createElement('div');
+    hint.className = 'empty-hint';
+    hint.textContent = 'Câu 1:   Câu 1.   Question 1)   Bài 1:   1. ...';
+    emptyBox.append(iconWrap, title, msg, hint);
+    emptyBox.style.display = 'flex';
+    document.getElementById('draftBanner')?.remove();
+    return;
+  }
+  emptyBox.style.display = 'none';
+
+  const noAns = qs.filter(q=>!q.ans).length;
+  document.getElementById('sTOTAL').textContent = qs.length;
+  document.getElementById('sOK').textContent    = qs.length - noAns;
+  document.getElementById('sNA').textContent    = noAns;
+  showEl('stats');
+
+  // Câu không có đề: hỏi user điền đề ngay, lần lượt từng câu (không đợi
+  // quét hết rồi mới hỏi 1 lần). Chỉ khởi động hàng đợi mới nếu chưa có
+  // popup nào đang mở, để không chồng nhiều lượt promptForMissingStems()
+  // khi render() bị gọi lại nhiều lần (ví dụ do OCR bổ sung câu).
+  if (autoPromptEnabled && !promptQueueActive && qs.some(q => q.needsPrompt)) {
+    promptForMissingStems(qs);
+  }
+
+  if (noAns > 0) {
+    const wb = document.getElementById('warnBox');
+    wb.style.display = 'flex';
+    const noAnsImg = qs.filter(q=>!q.ans && q.source==='tesseract').length;
+    let msg = `${noAns} câu chưa phát hiện được đáp án (file gốc có thể thiếu hoặc dùng màu chữ/highlight).`;
+    if (noAnsImg > 0) msg += ` Trong đó ${noAnsImg} câu lấy từ ảnh — không phát hiện đáp án tô vàng/đậm/gạch chân nên cần bạn tự điền đáp án.`;
+    wb.innerHTML = ICONS.alertTriangle + `<span>${msg}</span>`;
+  }
+
+  document.getElementById('outputBox').textContent = toLearnsyText(qs);
+  showEl('outputBox'); showEl('outLabel'); showEl('tabRow');
+  document.getElementById('actions').style.display = 'flex';
+  document.getElementById('draftBanner')?.remove(); // ẩn banner sau khi load file mới
+  saveToLocalStorage(); // lưu ngay sau khi parse xong
+
+  // Build preview using buildCard
+  const c = document.getElementById('qPreview');
+  c.innerHTML = '';
+  qs.forEach((q,idx) => {
+    c.appendChild(buildCard(q, idx));
+  });
+  // QUAN TRỌNG: không được ép qPreview hiện lên vô điều kiện ở đây — trước
+  // đây showEl('qPreview') luôn set display:flex ngay cả khi người dùng
+  // đang ở tab "Text output", ghi đè lên trạng thái mà switchTab() vừa
+  // thiết lập. Hậu quả: ngay sau khi OCR/parse xong, tab hiển thị bị lệch
+  // khỏi tab đang active; rồi khi bấm sang "Xem trước" và quay lại, nội
+  // dung preview biến mất vì display đã bị 2 nơi khác nhau tranh nhau set.
+  // Giờ chỉ hiện qPreview nếu tab "preview" đang thực sự active.
+  const previewIsActive = document.getElementById('tabPreview').classList.contains('active');
+  c.style.display = previewIsActive ? 'flex' : 'none';
+}
+
+function switchTab(tab) {
+  document.getElementById('tabText').classList.toggle('active', tab==='text');
+  document.getElementById('tabPreview').classList.toggle('active', tab==='preview');
+  document.getElementById('outputBox').style.display  = tab==='text'?'block':'none';
+  document.getElementById('outLabel').style.display   = tab==='text'?'block':'none';
+  document.getElementById('qPreview').style.display   = tab==='preview'?'flex':'none';
+}
+
+function copyOutput() {
+  navigator.clipboard.writeText(document.getElementById('outputBox').textContent).then(() => {
+    const btn = document.getElementById('copyBtn');
+    setIconText(btn, 'checkCircle', 'Đã copy!');
+    setTimeout(() => setIconText(btn, 'clipboard', 'Copy tất cả'), 2000);
+  });
+}
+
+function resetAll() {
+  allQ = [];
+  currentZip = null;
+  currentPdfDoc = null; // bỏ tham chiếu PDF cũ — cho phép GC giải phóng
+  pdfThumbState = null;
+  ocrImages.forEach(im => im.url && URL.revokeObjectURL(im.url));
+  ocrImages = [];
+  ['stats','warnBox','outputBox','actions','qPreview','tabRow','outLabel','progress','ocrSection'].forEach(hideEl);
+  document.getElementById('fileInput').value = '';
+  clearLocalStorage(); // xoá bản nháp khi người dùng chủ động reset
+}
+
+function el(tag,cls) { const e=document.createElement(tag); e.className=cls; return e; }
+// showEl restores the element's intended display value. The map below lists
+// every element that needs 'flex' (all others default to 'block').
+const FLEX_ELS = new Set(['stats','warnBox','warn-box','actions','ocr-progress','tab-row','tabRow','qPreview','q-preview']);
+function showEl(id) {
+  const e = document.getElementById(id);
+  if (!e) return;
+  const cls = [...e.classList];
+  const needsFlex = FLEX_ELS.has(id) || cls.some(c => FLEX_ELS.has(c));
+  e.style.display = needsFlex ? 'flex' : 'block';
+}
+function hideEl(id) { const e = document.getElementById(id); if (e) e.style.display = 'none'; }
+
+// ── FAB menu (dark mode + menu con) ───────────────────────────────────────────
+function toggleFabMenu() {
+  document.getElementById('fabGroup').classList.toggle('open');
+}
+function closeFabMenu() {
+  document.getElementById('fabGroup').classList.remove('open');
+}
+// Nút "Sáng / Tối" trong menu con — tách riêng khỏi nút FAB chính, vì nút
+// chính giờ dùng để bung/thu menu (xem góp ý: gộp lại, bấm dark mode bung ra).
+function toggleThemeOnly() {
+  toggleTheme();
+  closeFabMenu();
+}
+
+// ── Dark mode ─────────────────────────────────────────────────────────────────
+(function initTheme() {
+  const saved = localStorage.getItem('learnsy_theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const theme = saved || (prefersDark ? 'dark' : 'light');
+  applyTheme(theme, false);
+})();
+
+function applyTheme(theme, save = true) {
+  document.documentElement.setAttribute('data-theme', theme);
+  document.querySelector('meta[name="color-scheme"]').content = theme;
+  document.querySelector('meta[name="theme-color"]').content =
+    theme === 'dark' ? '#120330' : '#FFF8FB';
+  if (save) localStorage.setItem('learnsy_theme', theme);
+}
+
+function toggleTheme() {
+  const cur = document.documentElement.getAttribute('data-theme');
+  applyTheme(cur === 'dark' ? 'light' : 'dark');
+}
+
+// ── Chế độ trọng âm (Stress mode) ─────────────────────────────────────────────
+// Khi bật: gạch chân (u) KHÔNG còn dùng để suy đoán đáp án đúng nữa — thay
+// vào đó được coi là đánh dấu âm tiết trọng âm tiếng Anh, và được giữ lại
+// trong text xuất ra dưới dạng tag <u>...</u>. Đáp án đúng khi đó chỉ được
+// suy đoán qua bold/highlight/màu chữ, hoặc dòng "Answer:" tường minh.
+// Bật/tắt không tự parse lại file cũ — áp dụng cho lần parse tiếp theo, vì
+// việc suy đoán lại đáp án từ dữ liệu đã flatten có thể không chính xác.
+let stressMode = false;
+(function initStressMode() {
+  stressMode = localStorage.getItem('learnsy_stress_mode') === '1';
+  syncStressModeUI();
+})();
+function syncStressModeUI() {
+  const btn = document.getElementById('stressModeBtn');
+  if (btn) btn.classList.toggle('is-active', stressMode);
+  const label = document.querySelector('#stressModeBtn span');
+  if (label) label.textContent = stressMode ? 'Dấu nhấn: BẬT' : 'Dấu nhấn';
+}
+function toggleStressMode() {
+  stressMode = !stressMode;
+  localStorage.setItem('learnsy_stress_mode', stressMode ? '1' : '0');
+  syncStressModeUI();
+  closeFabMenu();
+  const label = document.querySelector('#stressModeBtn span');
+  if (label) label.textContent = stressMode ? 'Dấu nhấn: BẬT' : 'Dấu nhấn';
+}
+
+// ── Tự động hỏi đề cho câu thiếu đề ────────────────────────────────────────────
+// Mặc định BẬT (giữ hành vi cũ). Khi tắt: render() không tự mở popup hỏi đề
+// nữa — các câu q.needsPrompt vẫn được đánh dấu và có thể xử lý thủ công
+// sau này (ví dụ sửa trực tiếp trong tab Xem trước), nhưng không bị chặn
+// bởi popup mỗi lần parse xong.
+let autoPromptEnabled = true;
+(function initAutoPrompt() {
+  const saved = localStorage.getItem('learnsy_auto_prompt');
+  autoPromptEnabled = saved === null ? true : saved === '1';
+  syncAutoPromptUI();
+})();
+function syncAutoPromptUI() {
+  const btn = document.getElementById('autoPromptBtn');
+  if (btn) btn.classList.toggle('is-active', autoPromptEnabled);
+  const label = document.querySelector('#autoPromptBtn span');
+  if (label) label.textContent = autoPromptEnabled ? 'Hỏi đề: BẬT' : 'Hỏi đề: TẮT';
+}
+function toggleAutoPrompt() {
+  autoPromptEnabled = !autoPromptEnabled;
+  localStorage.setItem('learnsy_auto_prompt', autoPromptEnabled ? '1' : '0');
+  syncAutoPromptUI();
+  closeFabMenu();
+  // Nếu vừa bật lại và đang có câu thiếu đề chưa xử lý từ trước, mở popup
+  // ngay thay vì bắt user parse lại file mới mới thấy tác dụng.
+  if (autoPromptEnabled && !promptQueueActive && allQ.some(q => q.needsPrompt)) {
+    promptForMissingStems(allQ);
+  }
+}
+
+// ── Ngôn ngữ OCR (auto / eng / vie) ────────────────────────────────────────────
+// 'auto' = 'eng+vie' (mặc định, an toàn nhất cho đề trộn Anh-Việt nhưng tải
+// thêm traineddata + quét chậm hơn đôi chút). 'eng' và 'vie' dùng khi biết
+// chắc cả ảnh chỉ có 1 ngôn ngữ — nhanh hơn và đôi khi chính xác hơn vì
+// Tesseract không phải cân nhắc giữa 2 bộ ký tự cho mỗi vùng ảnh.
+// Không tự parse lại ảnh đã quét — chỉ áp dụng cho lần "Quét ảnh" tiếp theo.
+const OCR_LANG_MAP = { auto: 'eng+vie', eng: 'eng', vie: 'vie' };
+const OCR_LANG_ORDER = ['auto', 'eng', 'vie'];
+let ocrLang = 'auto';
+(function initOcrLang() {
+  const saved = localStorage.getItem('learnsy_ocr_lang');
+  ocrLang = OCR_LANG_ORDER.includes(saved) ? saved : 'auto';
+  syncOcrLangUI();
+})();
+function syncOcrLangUI() {
+  const group = document.getElementById('ocrLangGroup');
+  if (!group) return;
+  group.querySelectorAll('.fab-ocr-opt').forEach(opt => {
+    opt.classList.toggle('is-active', opt.dataset.lang === ocrLang);
+  });
+}
+function setOcrLang(lang) {
+  if (!OCR_LANG_ORDER.includes(lang) || lang === ocrLang) return;
+  ocrLang = lang;
+  localStorage.setItem('learnsy_ocr_lang', ocrLang);
+  syncOcrLangUI();
+}
+
+
+// ── Service Worker registration ───────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>

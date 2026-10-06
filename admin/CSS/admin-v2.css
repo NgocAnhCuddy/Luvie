@@ -1,0 +1,72 @@
+/* ══════════════════════════════════════════════════════════════════
+   ADMIN 2.0 — khu vực "Bài học" (tiêu đề, tìm kiếm, tab, chip lọc)
+   Nạp sau shared-2026.css. Chỉ thêm class av2-*, không ghi đè gì cũ.
+   ══════════════════════════════════════════════════════════════════ */
+.av2-search{
+  width:100%; height:46px; padding:0 40px 0 42px; border-radius:14px;
+  font-family:'Nunito',sans-serif; font-size:14px; font-weight:700; outline:none;
+  transition:border-color .15s, box-shadow .15s;
+}
+.av2-search::placeholder{ font-weight:600; opacity:.7; }
+.av2-search:focus{
+  border-color:rgba(124,58,237,.55) !important;
+  box-shadow:0 0 0 4px rgba(124,58,237,.12);
+}
+
+.av2-tabs{ display:flex; gap:22px; border-bottom:1px solid var(--av2-line,rgba(124,92,200,.18)); }
+.av2-tab{
+  position:relative; background:none; border:none; cursor:pointer; padding:6px 1px 11px;
+  display:flex; align-items:center; gap:7px; white-space:nowrap;
+  font-family:inherit; font-size:14px; font-weight:800; transition:color .15s;
+}
+.av2-tab-bar{
+  position:absolute; left:0; right:0; bottom:-1px; height:3px; border-radius:3px 3px 0 0;
+  background:linear-gradient(90deg,#F472B6,#A855F7);
+  transform:scaleX(0); transform-origin:50% 100%;
+  transition:transform .28s cubic-bezier(.22,1,.36,1);
+}
+.av2-tab[aria-selected="true"] .av2-tab-bar{ transform:scaleX(1); }
+.av2-count{
+  min-width:20px; height:20px; padding:0 6px; border-radius:99px; display:inline-flex;
+  align-items:center; justify-content:center; font-size:11px; font-weight:800;
+  font-variant-numeric:tabular-nums; transition:background .15s,color .15s;
+}
+
+.av2-chips{
+  display:flex; gap:6px; flex:1; min-width:0; overflow-x:auto; padding:2px 1px;
+  scrollbar-width:none; -webkit-overflow-scrolling:touch;
+}
+.av2-chips::-webkit-scrollbar{ display:none; }
+.av2-chip{
+  flex-shrink:0; height:34px; padding:0 12px; border-radius:99px; cursor:pointer;
+  display:inline-flex; align-items:center; gap:7px; white-space:nowrap;
+  font-family:inherit; font-size:12.5px; font-weight:800;
+  transition:background .15s,border-color .15s,color .15s,transform .12s;
+}
+.av2-chip:active{ transform:scale(.96); }
+.av2-sort{
+  flex-shrink:0; height:34px; padding:0 11px; border-radius:12px; cursor:pointer;
+  display:inline-flex; align-items:center; gap:6px; white-space:nowrap;
+  font-family:inherit; font-size:12.5px; font-weight:800;
+  transition:background .15s,border-color .15s,color .15s,transform .12s;
+}
+.av2-sort:active{ transform:scale(.96); }
+.av2-cta{
+  display:flex; align-items:center; gap:7px; height:42px; padding:0 16px; border-radius:14px;
+  border:none; color:#fff; font-size:13.5px; font-weight:900; cursor:pointer; flex-shrink:0;
+  background:linear-gradient(135deg,#F472B6,#A855F7);
+  box-shadow:0 6px 18px rgba(168,85,247,.28);
+  transition:transform .15s, box-shadow .15s, filter .15s;
+}
+.av2-cta:hover{ filter:brightness(1.05); box-shadow:0 8px 24px rgba(168,85,247,.38); }
+.av2-cta:active{ transform:scale(.97); }
+:is(.av2-tab,.av2-chip,.av2-sort,.av2-cta):focus-visible{ outline:2.5px solid #7C3AED; outline-offset:2px; }
+@media (prefers-reduced-motion: reduce){
+  .av2-tab-bar,.av2-chip,.av2-sort,.av2-cta,.av2-search{ transition:none; }
+}
+
+/* Màn hẹp: nút sắp xếp chỉ còn icon để đủ chỗ cho 3 chip môn */
+@media (max-width: 460px){
+  .av2-sort-label,.av2-sort-chev{ display:none; }
+  .av2-sort{ width:36px; padding:0; justify-content:center; }
+}

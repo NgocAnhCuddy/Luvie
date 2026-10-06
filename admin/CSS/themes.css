@@ -1,0 +1,64 @@
+/* ══════════════════════════════════════════════
+   🎨 THEMES — admin/CSS/themes.css
+   Princess 👑 · Minty 🍃 · Galaxy 🌌
+   ══════════════════════════════════════════════ */
+
+#bb-theme-switcher-admin {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.bb-theme-dot {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  border: 2.5px solid transparent;
+  cursor: pointer;
+  transition: transform 0.2s cubic-bezier(0.34,1.56,0.64,1), border-color 0.2s;
+  flex-shrink: 0;
+}
+.bb-theme-dot:hover { transform: scale(1.18); }
+.bb-theme-dot.active { border-color: white; box-shadow: 0 0 0 2px rgba(255,255,255,0.5); }
+
+/* Princess */
+body.theme-princess { background: #FFF0F8 !important; }
+body.theme-princess .logo-learnsy {
+  background: linear-gradient(120deg,#E91E8C,#D4A017,#E91E8C,#FCD34D,#E91E8C) !important;
+  background-size: 100% 100% !important;
+  -webkit-background-clip: text !important; background-clip: text !important;
+}
+body.dark.theme-princess { background: #1A0518 !important; }
+
+/* Minty */
+body.theme-minty { background: #F0FDF8 !important; }
+body.theme-minty .logo-learnsy {
+  background: linear-gradient(120deg,#10B981,#34D399,#6EE7B7,#06B6D4,#10B981) !important;
+  background-size: 100% 100% !important;
+  -webkit-background-clip: text !important; background-clip: text !important;
+}
+body.dark.theme-minty { background: #021A10 !important; }
+
+/* Galaxy */
+body.theme-galaxy { background: #0D0620 !important; }
+body.theme-galaxy::before {
+  background-image:
+    radial-gradient(circle at 15% 20%, rgba(232,121,249,0.12) 0%, transparent 45%),
+    radial-gradient(circle at 85% 10%, rgba(129,140,248,0.10) 0%, transparent 40%),
+    radial-gradient(circle at 50% 80%, rgba(167,139,250,0.08) 0%, transparent 40%),
+    radial-gradient(circle at 90% 70%, rgba(99,102,241,0.07)  0%, transparent 35%) !important;
+}
+body.theme-galaxy::after {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    radial-gradient(1px 1px at 12% 18%, rgba(255,255,255,0.8) 0%, transparent 100%),
+    radial-gradient(1px 1px at 35% 42%, rgba(255,255,255,0.6) 0%, transparent 100%),
+    radial-gradient(1px 1px at 55%  8%, rgba(255,255,255,0.7) 0%, transparent 100%),
+    radial-gradient(1px 1px at 72% 28%, rgba(255,255,255,0.5) 0%, transparent 100%),
+    radial-gradient(1px 1px at 88% 55%, rgba(255,255,255,0.9) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 45% 65%, rgba(232,121,249,0.9) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 70%  5%, rgba(129,140,248,0.9) 0%, transparent 100%);
+}
+body.theme-galaxy .logo-learnsy {
+  background: linear-gradient(120deg,#E879F9,#818CF8,#C084FC,#60A5FA,#E879F9) !important;
+  background-size: 100% 100% !important;
+  -webkit-background-clip: text !important; background-clip: text !important;
+}
+body.theme-galaxy #root > * { position: relative; z-index: 1; }

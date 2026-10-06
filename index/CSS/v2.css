@@ -1,0 +1,286 @@
+/* ══════════════════════════════════════════════════════════════════
+   LEARNSY 2.0 — lớp thiết kế mới (index/CSS/v2.css)
+   Nạp SAU shared-2026.css nên ghi đè được các giá trị cũ.
+   Chỉ đổi lớp hiển thị — không đụng logic.
+
+   Nguyên tắc 2.0:
+   1. Một thang bo góc: 10 / 14 / 20 (chip dùng 999).
+   2. Chữ làm bài to hơn, dễ đọc trên điện thoại (câu hỏi ≥ 16px).
+   3. Vùng chạm tối thiểu 44px cho mọi nút điều hướng.
+   4. Trạng thái đáp án phân biệt bằng màu + icon + viền,
+      không chỉ bằng màu.
+   ══════════════════════════════════════════════════════════════════ */
+
+:root{
+  --v2-ink: #1F1433;
+  --v2-ink-2: #352552;
+  --v2-ink-3: #6B5A8E;
+  --v2-violet: #9B5CF6;
+  --v2-violet-deep: #6B3FC4;
+  --v2-rose: #F472B6;
+  --v2-ok: #10B981;
+  --v2-bad: #EF4444;
+  --v2-warn: #F59E0B;
+
+  --v2-r-sm: 10px;
+  --v2-r-md: 14px;
+  --v2-r-lg: 20px;
+
+  --v2-brand: linear-gradient(135deg,#F472B6 0%,#A855F7 100%);
+  --v2-brand-glow: 0 6px 20px rgba(168,85,247,.32);
+}
+
+/* ── Chữ làm bài: to hơn, thoáng hơn ── */
+.ls-question-text{
+  font-size: clamp(16px, 4.4vw, 18px);
+  line-height: 1.65;
+  letter-spacing: 0;
+}
+.ls-passage-text{
+  font-size: clamp(14px, 3.8vw, 15.5px);
+  line-height: 1.8;
+}
+.ls-option-text{
+  font-size: clamp(14.5px, 4vw, 16px);
+  line-height: 1.55;
+  letter-spacing: 0;
+}
+.ls-tf-text{
+  font-size: clamp(14px, 3.9vw, 15.5px);
+  line-height: 1.65;
+}
+.ls-title-quiz{
+  font-size: clamp(13px, 3.4vw, 15px);
+}
+
+/* ── Màn làm bài 2.0 ── */
+.qp2-root{
+  --qp2-gap: 12px;
+}
+
+/* Thanh tiến độ: phần đã làm + con số ngay cạnh */
+.qp2-progress{
+  display:flex; align-items:center; gap:10px;
+}
+.qp2-progress-track{
+  flex:1; height:8px; border-radius:99px; overflow:hidden; position:relative;
+}
+.qp2-progress-fill{
+  height:100%; border-radius:99px;
+  background: var(--v2-brand);
+  transition: width .45s cubic-bezier(.22,1,.36,1);
+}
+.qp2-progress-count{
+  font-size:12px; font-weight:800; font-variant-numeric:tabular-nums;
+  min-width:44px; text-align:right;
+}
+
+/* Nút tròn ở header (quay lại, tuỳ chọn) — vùng chạm 40px */
+.qp2-iconbtn{
+  width:40px; height:40px; border-radius:var(--v2-r-md);
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; flex-shrink:0;
+  transition: transform .15s var(--ease-smooth,ease), background .15s;
+}
+.qp2-iconbtn:active{ transform:scale(.92); }
+
+/* Thẻ đáp án: nhấn xuống có phản hồi rõ */
+.qp2-opt{ -webkit-tap-highlight-color:transparent; }
+.qp2-opt:active{ transform:scale(.985) !important; }
+
+/* Dock dưới: gộp điều hướng + nộp bài thành một khối */
+.qp2-dock{
+  position:sticky; bottom:0;
+  padding:10px 14px calc(14px + env(safe-area-inset-bottom,0px));
+}
+.qp2-dock-nav{
+  display:flex; align-items:center; gap:8px; margin-bottom:10px;
+}
+.qp2-navbtn{
+  flex-shrink:0; width:44px; height:44px; border-radius:var(--v2-r-md);
+  display:flex; align-items:center; justify-content:center;
+  cursor:pointer; transition: transform .15s, opacity .15s;
+}
+.qp2-navbtn:active:not(:disabled){ transform:scale(.92); }
+
+.qp2-submit{
+  width:100%; min-height:52px; border:none; border-radius:var(--v2-r-md);
+  background: var(--v2-brand); color:#fff;
+  font-size:15px; font-weight:900; letter-spacing:.1px;
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  cursor:pointer; box-shadow: var(--v2-brand-glow);
+  transition: transform .15s, box-shadow .15s, filter .15s;
+}
+.qp2-submit:hover{ filter:brightness(1.05); box-shadow:0 8px 26px rgba(168,85,247,.42); }
+.qp2-submit:active{ transform:scale(.985); }
+
+/* Focus ring theo màu thương hiệu 2.0 */
+button:focus-visible, input:focus-visible, textarea:focus-visible,
+select:focus-visible, a:focus-visible{
+  outline: 2.5px solid var(--v2-violet);
+  outline-offset: 2px;
+}
+
+/* Màn hẹp: giảm khoảng đệm một chút để câu hỏi dài đỡ phải cuộn */
+@media (max-width: 380px){
+  .ls-question-text{ font-size:15.5px; }
+  .ls-option-text{ font-size:14.5px; }
+}
+
+/* Màn rộng (máy tính): khung làm bài thoáng hơn */
+@media (min-width: 900px){
+  .qp2-root{ --qp2-gap: 16px; }
+  .ls-question-text{ font-size:19px; }
+  .ls-option-text{ font-size:16.5px; }
+}
+
+/* ── Trang chủ 2.0: thẻ bài học ── */
+.ls-lesson-card{
+  border-radius: var(--v2-r-lg) !important;
+}
+.ls-lesson-card:active{ transform:scale(.985) !important; }
+.ls-play-btn{
+  border-radius: var(--v2-r-md) !important;
+}
+.ls-lesson-card:hover .ls-play-btn{
+  transform: scale(1.06);
+  box-shadow: 0 5px 16px rgba(168,85,247,.5) !important;
+}
+.ls-title-hero{
+  font-size: clamp(22px, 6vw, 30px);
+  line-height: 1.2;
+  letter-spacing: -0.4px;
+}
+.ls-title-card{
+  font-size: clamp(14.5px, 3.9vw, 16.5px);
+  line-height: 1.35;
+}
+.ls-desc{
+  font-size: clamp(12.5px, 3.3vw, 13.5px);
+}
+
+/* Chip nhãn: tối thiểu 11px để đọc được trên màn nhỏ */
+.ls-label-sm{ font-size: clamp(11px, 2.8vw, 12px); }
+
+@media (prefers-reduced-motion: reduce){
+  .qp2-progress-fill, .qp2-submit, .qp2-navbtn, .qp2-iconbtn{ transition:none; }
+}
+
+/* Gợi ý phím tắt chỉ có ý nghĩa với bàn phím — ẩn trên màn cảm ứng */
+@media (hover: none){
+  .qp2-kbd-hint{ display:none; }
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   HOẠT ẢNH 2.0 — chỉ chạy khi người dùng không bật "giảm chuyển động"
+   ══════════════════════════════════════════════════════════════════ */
+@keyframes qp2Pop{
+  0%{ transform:scale(1); }
+  35%{ transform:scale(1.035); box-shadow:0 0 0 6px rgba(16,185,129,.18); }
+  100%{ transform:scale(1); }
+}
+@keyframes qp2Shake{
+  0%,100%{ transform:translateX(0); }
+  20%{ transform:translateX(-6px); }
+  40%{ transform:translateX(5px); }
+  60%{ transform:translateX(-4px); }
+  80%{ transform:translateX(2px); }
+}
+@keyframes qp2Eliminate{
+  0%{ opacity:1; transform:scale(1); }
+  40%{ transform:scale(.97) rotate(-.6deg); }
+  100%{ opacity:.32; transform:scale(.985); }
+}
+@keyframes qp2FloatUp{
+  0%{ opacity:0; transform:translateY(10px) scale(.9); }
+  18%{ opacity:1; transform:translateY(0) scale(1.04); }
+  30%{ transform:translateY(-4px) scale(1); }
+  100%{ opacity:0; transform:translateY(-42px) scale(1); }
+}
+@keyframes qp2Bump{
+  0%{ transform:scale(1); }
+  40%{ transform:scale(1.28); }
+  100%{ transform:scale(1); }
+}
+@keyframes qp2Flame{
+  0%,100%{ transform:scale(1) rotate(-3deg); }
+  50%{ transform:scale(1.18) rotate(3deg); }
+}
+@keyframes qp2Shimmer{
+  0%{ transform:translateX(-120%); }
+  100%{ transform:translateX(320%); }
+}
+@keyframes qp2FxFade{ 0%{opacity:0;} 15%{opacity:1;} 80%{opacity:1;} 100%{opacity:0;} }
+@keyframes qp2Ready{
+  0%,100%{ box-shadow:var(--v2-brand-glow); }
+  50%{ box-shadow:0 8px 30px rgba(168,85,247,.6), 0 0 0 5px rgba(168,85,247,.14); }
+}
+
+.qp2-pop{ animation:qp2Pop .45s cubic-bezier(.22,1,.36,1); }
+.qp2-shake{ animation:qp2Shake .42s ease; }
+
+/* Đáp án bị 50:50 loại: mờ đi + gạch chữ, vẫn giữ chỗ để bố cục không nhảy */
+.qp2-opt-gone{
+  animation:qp2Eliminate .5s ease forwards;
+  pointer-events:none;
+  cursor:default !important;
+}
+.qp2-opt-gone .ls-option-text{ text-decoration:line-through; text-decoration-thickness:1.5px; }
+
+/* Popup điểm nổi */
+.qp2-fx-layer{
+  position:fixed; left:0; right:0; top:calc(env(safe-area-inset-top,0px) + 118px);
+  display:flex; flex-direction:column; align-items:center; gap:6px;
+  pointer-events:none; z-index:90;
+}
+.qp2-fx{
+  padding:7px 16px; border-radius:999px; text-align:center;
+  font-weight:900; color:#fff;
+  animation:qp2FloatUp 1.1s cubic-bezier(.22,1,.36,1) forwards;
+  box-shadow:0 8px 24px rgba(31,20,51,.22);
+}
+.qp2-fx-ok{ background:linear-gradient(135deg,#10B981,#059669); }
+.qp2-fx-bad{ background:linear-gradient(135deg,#F59E0B,#EF4444); }
+.qp2-fx-main{ font-size:15px; line-height:1.2; }
+.qp2-fx-sub{ font-size:11px; font-weight:800; opacity:.92; margin-top:1px; }
+
+/* Chip XP + hiệu ứng nảy khi số đổi */
+.qp2-xp{
+  display:flex; align-items:center; gap:5px; padding:4px 11px; border-radius:999px;
+  background:rgba(139,92,246,.1); border:1.5px solid rgba(139,92,246,.35);
+  font-size:11px; font-weight:900; color:#7C3AED; font-variant-numeric:tabular-nums;
+}
+.qp2-bump{ display:inline-flex; animation:qp2Bump .38s cubic-bezier(.22,1,.36,1); }
+.qp2-flame{ transform-origin:50% 90%; animation:qp2Flame 1.1s ease-in-out infinite; }
+
+/* Nút gợi ý 50:50 */
+.qp2-hint{
+  display:inline-flex; align-items:center; gap:8px; min-height:36px; padding:4px 14px 4px 5px;
+  border-radius:999px; cursor:pointer; font-size:12px; font-weight:800; color:var(--v2-violet-deep);
+  background:rgba(155,92,246,.09); border:1.5px solid rgba(155,92,246,.3);
+  transition:transform .15s, background .15s, opacity .15s;
+}
+.qp2-hint:active:not(:disabled){ transform:scale(.96); }
+.qp2-hint:disabled{ opacity:.5; cursor:default; }
+.qp2-hint-badge{
+  padding:4px 9px; border-radius:999px; font-size:11px; font-weight:900; color:#fff;
+  background:var(--v2-brand);
+}
+
+/* Thanh tiến độ: vệt sáng chạy qua */
+.qp2-progress-fill{ position:relative; overflow:hidden; }
+.qp2-progress-fill::after{
+  content:''; position:absolute; top:0; bottom:0; left:0; width:35%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.55),transparent);
+  animation:qp2Shimmer 2.4s ease-in-out infinite;
+}
+
+/* Nút Nộp bài "thở" khi đã làm hết các câu */
+.qp2-submit-ready{ animation:qp2Ready 1.8s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce){
+  .qp2-pop,.qp2-shake,.qp2-bump,.qp2-flame,.qp2-submit-ready,
+  .qp2-progress-fill::after{ animation:none !important; }
+  .qp2-opt-gone{ animation:none; opacity:.32; }
+  .qp2-fx{ animation-name:qp2FxFade; transform:none; }
+}

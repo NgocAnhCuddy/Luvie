@@ -1,0 +1,95 @@
+/* ══════════════════════════════════════════════════════════════════
+   SHARED-2026.CSS — Design tokens & polish dùng chung Student + Admin
+   Mục tiêu: "mịn 2026" — easing tự nhiên hơn, đổ bóng nhiều lớp thay vì
+   phẳng, glass effect tinh tế, focus ring rõ ràng, scrollbar mảnh.
+   CHỈ thêm lớp visual — không đụng vào logic/behavior nào.
+   ══════════════════════════════════════════════════════════════════ */
+
+:root{
+  /* Easing chuẩn 2026: mượt tự nhiên, có chút bounce nhẹ cho micro-interaction */
+  --ease-smooth: cubic-bezier(.22,1,.36,1);       /* dùng cho hover/transition thường */
+  --ease-spring: cubic-bezier(.34,1.56,.64,1);    /* dùng cho pop/bounce (đã có sẵn ở nhiều nơi) */
+  --ease-out-expo: cubic-bezier(.16,1,.3,1);      /* dùng cho slide/fade lớn */
+
+  /* Đổ bóng nhiều lớp — gần + xa, tạo chiều sâu tự nhiên hơn 1 lớp bóng phẳng */
+  --shadow-xs: 0 1px 2px rgba(120,40,90,0.06);
+  --shadow-sm: 0 1px 2px rgba(120,40,90,0.05), 0 3px 8px rgba(120,40,90,0.06);
+  --shadow-md: 0 2px 4px rgba(120,40,90,0.04), 0 8px 20px rgba(168,85,247,0.09);
+  --shadow-lg: 0 4px 10px rgba(120,40,90,0.05), 0 16px 40px rgba(168,85,247,0.14);
+  --shadow-xl: 0 8px 20px rgba(120,40,90,0.08), 0 28px 64px rgba(168,85,247,0.18);
+
+  --shadow-sm-dark: 0 1px 2px rgba(0,0,0,0.2), 0 3px 10px rgba(0,0,0,0.22);
+  --shadow-md-dark: 0 2px 6px rgba(0,0,0,0.22), 0 10px 26px rgba(0,0,0,0.28);
+  --shadow-lg-dark: 0 4px 14px rgba(0,0,0,0.26), 0 20px 48px rgba(0,0,0,0.34);
+
+  /* Glass surface tinh tế — dùng cho card/sheet/header */
+  --glass-light: rgba(255,255,255,0.72);
+  --glass-light-strong: rgba(255,255,255,0.86);
+  --glass-dark: rgba(30,13,21,0.62);
+  --glass-dark-strong: rgba(30,13,21,0.78);
+  --glass-blur: blur(18px) saturate(160%);
+}
+
+/* ── Scrollbar mảnh, mượt hơn (giữ nguyên màu gốc, chỉ tinh chỉnh hover) ── */
+::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar-thumb{border-radius:99px;transition:background .2s var(--ease-smooth);}
+::-webkit-scrollbar-thumb:hover{background:rgba(255,140,170,0.5)!important;}
+body.dark ::-webkit-scrollbar-thumb:hover{background:rgba(200,80,120,0.45)!important;}
+* { scrollbar-width: thin; }
+
+/* ── Focus ring rõ ràng, nhất quán — thay cho outline mặc định browser ── */
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible{
+  outline: 2.5px solid rgba(168,85,247,0.55);
+  outline-offset: 2px;
+  border-radius: 8px;
+  transition: outline-color .15s var(--ease-smooth);
+}
+
+/* ── Mọi transition mặc định trên nút/thẻ dùng easing mượt hơn ease-in-out cứng ── */
+button, .fade-up, [class*="card"], [class*="btn"]{
+  transition-timing-function: var(--ease-smooth);
+}
+
+/* ── Bỏ hiệu ứng highlight xanh mặc định khi tap trên mobile ── */
+button{
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Ảnh/icon load mượt hơn — tránh giật khi lazy load ── */
+img{ transition: opacity .25s var(--ease-smooth); }
+
+/* ── Selection màu thương hiệu thay vì xanh mặc định trình duyệt ── */
+::selection{ background: rgba(168,85,247,0.24); color: inherit; }
+
+/* ── Số liệu (điểm số, %) dùng tabular-nums để không bị nhảy layout khi đổi số ── */
+[class*="score"], [class*="percent"], [class*="pct"]{
+  font-variant-numeric: tabular-nums;
+}
+
+/* (Đã bỏ rule mask-image cho border-radius toàn cục — rủi ro vỡ layout ở các
+   component dùng position:absolute + overflow (vd thẻ lật 3D) cao hơn lợi ích
+   thẩm mỹ nhỏ mà nó mang lại.) */
+
+/* ── Reduce motion: tôn trọng cài đặt hệ điều hành ── */
+@media (prefers-reduced-motion: reduce){
+  *, *::before, *::after{
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── Utility class mới: glass card 2026 — dùng thêm nếu cần, không bắt buộc ── */
+.glass-2026{
+  background: var(--glass-light);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid rgba(255,255,255,0.5);
+  box-shadow: var(--shadow-md);
+}
+body.dark .glass-2026{
+  background: var(--glass-dark);
+  border-color: rgba(255,255,255,0.08);
+  box-shadow: var(--shadow-md-dark);
+}

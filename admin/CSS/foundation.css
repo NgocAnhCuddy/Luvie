@@ -1,0 +1,126 @@
+/* ══════════════════════════════════════════════════════════════════
+   LUVIE FOUNDATION (06–11/10) — index/CSS/foundation.css
+   Lớp nền tảng "app học tập cá nhân": mềm, bo tròn, thoáng.
+   Nạp CUỐI CÙNG (sau v2.css / admin-v2.css) nên ghi đè token cũ.
+   Chỉ đổi lớp hiển thị — không đụng logic.
+   ══════════════════════════════════════════════════════════════════ */
+
+:root{
+  /* Thang bo góc mới (mềm hơn bản 10/14/20) */
+  --lv-r-xs: 10px;
+  --lv-r-sm: 14px;
+  --lv-r-md: 18px;
+  --lv-r-lg: 24px;
+  --lv-r-xl: 28px;
+  --lv-r-pill: 999px;
+
+  /* Token cũ trỏ về thang mới → v2.css / admin-v2.css tự mềm theo */
+  --v2-r-sm: var(--lv-r-sm);
+  --v2-r-md: var(--lv-r-md);
+  --v2-r-lg: var(--lv-r-lg);
+
+  /* Icon: 3 cỡ chuẩn */
+  --lv-icon-sm: 16px;
+  --lv-icon-md: 20px;
+  --lv-icon-lg: 24px;
+
+  /* Nút: chiều cao chuẩn */
+  --lv-btn-h: 44px;
+  --lv-btn-h-sm: 36px;
+
+  /* Bóng mềm kiểu "kẹo" */
+  --lv-shadow-card: 0 2px 6px rgba(168,85,247,.05), 0 10px 26px rgba(244,114,182,.12);
+  --lv-shadow-btn: 0 4px 14px rgba(168,85,247,.22);
+
+  /* Chữ */
+  --lv-font: 'Nunito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --lv-lh: 1.65;
+
+  /* Glass nhẹ hơn: bỏ saturate (thêm 1 pass render), blur nhỏ hơn */
+  --glass-blur: blur(10px);
+}
+
+/* ── Typography: dễ thương, thoáng ── */
+html,body,#root{ font-family: var(--lv-font); }
+body{
+  line-height: var(--lv-lh);
+  letter-spacing: .1px;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+h1,h2,h3,h4{ font-weight: 800; line-height: 1.3; letter-spacing: -.1px; }
+p,li{ line-height: var(--lv-lh); }
+button,input,textarea,select{ font-family: var(--lv-font); }
+button{ font-weight: 800; letter-spacing: .1px; }
+::placeholder{ opacity: .65; font-weight: 600; }
+::selection{ background: rgba(244,114,182,.28); }
+
+/* ── Icon: nét tròn, đồng nhất ── */
+svg{ stroke-linecap: round; stroke-linejoin: round; }
+.lv-icon{ width: var(--lv-icon-md); height: var(--lv-icon-md); flex-shrink: 0; }
+.lv-icon-sm{ width: var(--lv-icon-sm); height: var(--lv-icon-sm); }
+.lv-icon-lg{ width: var(--lv-icon-lg); height: var(--lv-icon-lg); }
+
+/* ── Ô nhập liệu mềm (chỉ tác dụng khi không có inline radius) ── */
+input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),
+textarea, select{
+  border-radius: var(--lv-r-sm);
+}
+
+/* ── Nút chuẩn (class dùng cho chỗ mới / dần thay chỗ cũ) ── */
+.lv-btn{
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: var(--lv-btn-h); padding: 0 20px;
+  border: 0; border-radius: var(--lv-r-md);
+  font-weight: 800; font-size: 14.5px; cursor: pointer; color: #fff;
+  background: linear-gradient(135deg,#F472B6 0%,#A855F7 100%);
+  box-shadow: var(--lv-shadow-btn);
+  transition: transform .18s var(--ease-smooth, ease), box-shadow .18s, filter .18s;
+}
+.lv-btn:active{ transform: scale(.97); }
+.lv-btn-soft{
+  background: rgba(168,85,247,.10); color: #7C3AED; box-shadow: none;
+}
+.lv-btn-sm{ min-height: var(--lv-btn-h-sm); padding: 0 14px; font-size: 13px; border-radius: var(--lv-r-sm); }
+
+/* ── Thẻ chuẩn ── */
+.lv-card{
+  border-radius: var(--lv-r-lg);
+  box-shadow: var(--lv-shadow-card);
+  border: 1px solid rgba(244,114,182,.16);
+}
+
+/* ── Thẻ bài học (học sinh): thoáng hơn ── */
+.ls-lesson-grid{ gap: 14px; }
+@media (min-width:600px){ .ls-lesson-grid{ gap: 16px; } }
+@media (min-width:900px){ .ls-lesson-grid{ gap: 18px; } }
+.ls-body-pad{ padding: clamp(14px,4.4vw,22px); padding-bottom: 88px; }
+.ls-section-gap{ margin-bottom: 24px; }
+.ls-title-card{ line-height: 1.45; }
+.ls-desc{ line-height: 1.7; }
+
+/* ── Scrollbar mềm ── */
+::-webkit-scrollbar-thumb{ border-radius: var(--lv-r-pill); }
+
+/* ── Tôn trọng "giảm chuyển động" cho hiệu ứng nảy mới ── */
+@media (prefers-reduced-motion: reduce){
+  .lv-btn{ transition: none; }
+}
+
+/* ══ Riêng admin: giống app cá nhân hơn bảng điều khiển ══ */
+:root{
+  --lv-admin-bg: linear-gradient(180deg,#FFF5F9 0%,#F6EEFF 100%);
+}
+body:not(.dark) #root{ background: var(--lv-admin-bg); }
+
+/* Tiêu đề tab/khu vực: bớt cứng */
+.av2-tab, .av2-chip, .av2-cta, .av2-sort{ font-weight: 800; letter-spacing: .1px; }
+.av2-search{ border-radius: var(--lv-r-md); }
+.av2-chip{ border-radius: var(--lv-r-pill); }
+.av2-cta{ border-radius: var(--lv-r-md); box-shadow: var(--lv-shadow-btn); }
+
+/* Bảng/khối dữ liệu: viền mảnh, bóng mềm thay vì đường kẻ cứng */
+table{ border-collapse: separate; border-spacing: 0 6px; }
+th{ font-weight: 800; text-transform: none; letter-spacing: .2px; }
+td:first-child, th:first-child{ border-top-left-radius: var(--lv-r-sm); border-bottom-left-radius: var(--lv-r-sm); }
+td:last-child, th:last-child{ border-top-right-radius: var(--lv-r-sm); border-bottom-right-radius: var(--lv-r-sm); }

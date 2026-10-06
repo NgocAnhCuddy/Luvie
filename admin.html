@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Learnsy · Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- ★ Perf: preconnect CDN Supabase SDK — request chặn-render đầu tiên,
+     kết nối sớm (DNS+TLS) giúp giảm độ trễ trước khi script tải xong -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Dancing+Script:wght@700;800;900&family=Satisfy&display=swap" rel="stylesheet">
+
+<!-- ═══ Dark mode pre-init ═══ -->
+<script>
+(function(){
+  var dark=window.matchMedia&&window.matchMedia('(prefers-color-scheme:dark)').matches;
+  try{
+    var stored=localStorage.getItem('learnsy_admin_dark');
+    if(stored==='1')dark=true;
+    else if(stored==='0')dark=false;
+  }catch(e){}
+  if(dark){
+    document.documentElement.classList.add('dark');
+    document.body&&document.body.classList.add('dark');
+  }
+  if(!document.body){
+    document.addEventListener('DOMContentLoaded',function(){
+      if(dark)document.body.classList.add('dark');
+    },{once:true});
+  }
+  window.__adminDarkInit=dark;
+})();
+</script>
+
+<!-- ═══ Samsung WebView / Gboard DOM safety patch ═══ -->
+<script>
+(function(){
+  var _rc=Node.prototype.removeChild;
+  Node.prototype.removeChild=function(child){
+    if(child&&child.parentNode===this)return _rc.call(this,child);
+    return child||null;
+  };
+  var _ib=Node.prototype.insertBefore;
+  Node.prototype.insertBefore=function(node,ref){
+    if(!ref)return _ib.call(this,node,null);
+    try{return _ib.call(this,node,ref);}catch(e){}
+    try{return _ib.call(this,node,null);}catch(e){}
+    return node;
+  };
+})();
+</script>
+
+<!-- ═══ CDN ═══ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/15.1.22/Tone.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<!-- ═══ Supabase config ═══ -->
+<script>
+  const CACHE_KEY='lessons_cache';
+
+  async function upstashCmd(...args){
+    try{
+      const r=await fetch('/api/cache',{method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(args)});
+      return(await r.json()).result;
+    }catch(e){return null;}
+  }
+
+  // invalidateCache() được định nghĩa trong admin/JS/main.jsx (load bên dưới) —
+  // gọi đúng chuẩn POST /api/cache với body ['DEL','lessons_cache'].
+  // KHÔNG định nghĩa lại ở đây để tránh 2 bản khác nhau cùng tên gây nhầm lẫn.
+
+  const CF_WORKER_URL='';
+  async function cfFetch(path,body){
+    const r=await fetch(CF_WORKER_URL+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    return r.json();
+  }
+
+  window.__ENC_KEY='cf71184c6108936b852ca4f0fca82fa873bf4ce0f9f26e44afc17edbe6c5ca3f';
+
+  async function _decryptCfg(enc){
+    function b64(s){return Uint8Array.from(atob(s),c=>c.charCodeAt(0));}
+    function h2b(h){return Uint8Array.from({length:h.length>>1},(_,i)=>parseInt(h.slice(i*2,i*2+2),16));}
+    const key=await crypto.subtle.importKey(
+      'raw',h2b(window.__ENC_KEY),{name:'AES-GCM'},false,['decrypt']);
+    const plain=await crypto.subtle.decrypt(
+      {name:'AES-GCM',iv:b64(enc.iv),tagLength:128},key,b64(enc.data));
+    return JSON.parse(new TextDecoder().decode(plain));
+  }
+
+  window.__configReady=(async()=>{
+    try{
+      const enc=await fetch('/api/config').then(r=>r.json());
+      const cfg=await _decryptCfg(enc);
+      window.supa=supabase.createClient(cfg.supaUrl||'',cfg.supaKey||'');
+      window.ADMIN_API_KEY=cfg.adminApiKey||''; // rỗng nếu chưa đăng nhập admin
+    }catch(e){
+      console.error('[config] Lỗi load/giải mã config:',e);
+    }
+  })();
+
+  /** Sau khi admin đăng nhập: xin lại cấu hình kèm JWT để nhận ADMIN_API_KEY. */
+  window.__loadAdminKey=async function(){
+    try{
+      const {data}=await window.supa.auth.getSession();
+      const jwt=data&&data.session&&data.session.access_token;
+      if(!jwt)return false;
+      const enc=await fetch('/api/config',{headers:{Authorization:'Bearer '+jwt},cache:'no-store'}).then(r=>r.json());
+      const cfg=await _decryptCfg(enc);
+      window.ADMIN_API_KEY=cfg.adminApiKey||'';
+      return !!window.ADMIN_API_KEY;
+    }catch(e){console.error('[config] __loadAdminKey:',e);return false;}
+  };
+</script>
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body,#root{min-height:100vh;font-family:'Nunito',sans-serif;background:#FFF5F9;}
+#root{background:transparent;}
+button,input,textarea,select{font-family:'Nunito',sans-serif;}
+::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-thumb{background:rgba(255,140,170,0.3);border-radius:99px;}
+
+/* ★ Perf: tôn trọng cài đặt "giảm chuyển động" — xem giải thích ở index.html */
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:0.001ms!important;animation-iteration-count:1!important;transition-duration:0.001ms!important;scroll-behavior:auto!important;}
+}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+@keyframes shimmer{0%,100%{background-position:0% 50%;}50%{background-position:100% 50%;}}
+@keyframes float{0%,100%{transform:translateY(0) rotate(-4deg);}50%{transform:translateY(-5px) rotate(4deg);}}
+@keyframes floatB{0%,100%{transform:translateY(0) rotate(3deg);}50%{transform:translateY(-4px) rotate(-3deg);}}
+@keyframes spin{to{transform:rotate(360deg);}}
+@keyframes pop{0%{transform:scale(.8);opacity:0;}100%{transform:scale(1);opacity:1;}}
+@keyframes pulse{0%,100%{opacity:.7;}50%{opacity:1;}}
+@keyframes slideIn{from{transform:translateY(20px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+
+.logo-learnsy{font-family:'Satisfy','Dancing Script','Brush Script MT',cursive;font-weight:400;font-size:29px;letter-spacing:0;
+  background:linear-gradient(100deg,#5cc791 0%,#a4ac71 38%,#ef8e59 72%,#e0907a 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  display:inline-block;padding:.06em .2em .12em .06em;line-height:1.1;}
+.logo-fl{display:inline-block;animation:float 2.8s ease-in-out infinite;font-size:15px;}
+.logo-flb{display:inline-block;animation:floatB 3.2s ease-in-out infinite;font-size:15px;animation-delay:.5s;}
+
+.fade-up{animation:fadeUp .24s ease both;}
+.spin{animation:spin .7s linear infinite;display:inline-block;}
+.pop{animation:pop .22s ease both;}
+
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:
+    radial-gradient(circle at 15% 20%, rgba(255,182,203,0.12) 0%, transparent 45%),
+    radial-gradient(circle at 85% 10%, rgba(196,181,253,0.1) 0%, transparent 40%),
+    radial-gradient(circle at 50% 80%, rgba(167,243,208,0.08) 0%, transparent 40%),
+    radial-gradient(circle at 90% 70%, rgba(253,186,116,0.07) 0%, transparent 35%);}
+
+html.dark,body.dark,body.dark #root{background:#180A10!important;}
+body.dark::before{background-image:
+  radial-gradient(circle at 15% 20%, rgba(255,80,120,0.07) 0%, transparent 45%),
+  radial-gradient(circle at 85% 10%, rgba(160,100,255,0.06) 0%, transparent 40%),
+  radial-gradient(circle at 50% 80%, rgba(80,200,140,0.04) 0%, transparent 40%),
+  radial-gradient(circle at 90% 70%, rgba(250,150,60,0.04) 0%, transparent 35%);}
+body.dark ::-webkit-scrollbar-thumb{background:rgba(200,80,120,0.25);}
+.dm-btn{width:34px;height:34px;border-radius:50%;border:1.5px solid rgba(255,150,200,0.25);background:rgba(255,150,200,0.07);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .2s;flex-shrink:0;}
+.dm-btn:hover{background:rgba(255,150,200,0.14);transform:scale(1.08);}
+[contenteditable][data-ph]:empty:before{content:attr(data-ph);color:#C8A0B8;pointer-events:none;font-weight:600;}
+body.dark [contenteditable][data-ph]:empty:before{color:#5A3050;}
+.ls-container{width:100%;max-width:min(760px,100%);margin:0 auto;box-sizing:border-box;}
+.ls-page-pad{padding-left:clamp(10px,3vw,28px);padding-right:clamp(10px,3vw,28px);}
+.ls-content-pad{padding:clamp(12px,3vw,24px) clamp(10px,3vw,24px) 100px;}
+@media(min-width:600px){.ls-container{max-width:min(760px,92vw);}}
+@media(min-width:900px){.ls-container{max-width:760px;}}
+</style>
+<link rel="stylesheet" href="admin/CSS/shared-2026.css">
+<link rel="stylesheet" href="admin/CSS/admin-v2.css">
+<link rel="stylesheet" href="admin/CSS/foundation.css">
+</head>
+<body>
+<div id="root"></div>
+<div id="toastContainer"></div>
+
+<!-- ★★★ Chờ supa sẵn sàng rồi mới load admin ★★★ -->
+<script type="module">
+  (async()=>{
+    await window.__configReady;
+    if(!window.supa){
+      console.error('[admin] supa vẫn undefined sau __configReady — kiểm tra /api/config');
+    }
+    await import('./admin/JS/main.jsx');
+  })();
+</script>
+</body>
+</html>

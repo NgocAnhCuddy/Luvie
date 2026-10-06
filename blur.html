@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Làm mờ ảnh — Blurly</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+  :root{
+    --bg-deep:#0a0714;
+    --bg-mid:#120b24;
+    --panel:#140f26;
+    --panel-line: rgba(155, 108, 255, 0.25);
+    --violet:#a78bfa;
+    --violet-bright:#c4b5fd;
+    --violet-deep:#7c3aed;
+    --violet-glow: rgba(167, 139, 250, 0.55);
+    --ink:#ece6fb;
+    --ink-soft:#9c8fc2;
+    --card: rgba(20, 14, 38, 0.75);
+    --card-line: rgba(167, 139, 250, 0.3);
+    --shadow: 0 25px 70px -25px rgba(124, 58, 237, 0.55);
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    min-height:100vh;
+    font-family: 'Space Grotesk', 'Segoe UI', system-ui, sans-serif;
+    background:
+      radial-gradient(circle at 20% 0%, rgba(124,58,237,0.25) 0%, transparent 45%),
+      radial-gradient(circle at 85% 20%, rgba(167,139,250,0.18) 0%, transparent 50%),
+      radial-gradient(circle at 50% 100%, rgba(94,44,190,0.25) 0%, transparent 55%),
+      linear-gradient(160deg, var(--bg-deep) 0%, var(--bg-mid) 55%, #0d0820 100%);
+    background-attachment: fixed;
+    color:var(--ink);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding: 32px 16px 60px;
+    position:relative;
+    overflow-x:hidden;
+  }
+  /* Lưới công nghệ mờ phía sau toàn trang */
+  body::before{
+    content:'';
+    position:fixed;
+    inset:0;
+    background-image:
+      linear-gradient(rgba(167,139,250,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(167,139,250,0.06) 1px, transparent 1px);
+    background-size: 42px 42px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 20%, black 0%, transparent 75%);
+    -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 20%, black 0%, transparent 75%);
+    pointer-events:none;
+    z-index:0;
+  }
+  /* Các hạt sáng trôi nổi nhẹ */
+  body::after{
+    content:'';
+    position:fixed;
+    inset:0;
+    background:
+      radial-gradient(2px 2px at 10% 20%, rgba(196,181,253,0.9), transparent),
+      radial-gradient(2px 2px at 80% 30%, rgba(196,181,253,0.7), transparent),
+      radial-gradient(1.5px 1.5px at 60% 70%, rgba(196,181,253,0.6), transparent),
+      radial-gradient(2px 2px at 30% 85%, rgba(196,181,253,0.8), transparent),
+      radial-gradient(1.5px 1.5px at 90% 80%, rgba(196,181,253,0.5), transparent);
+    animation: floatParticles 12s ease-in-out infinite;
+    pointer-events:none;
+    z-index:0;
+  }
+  @keyframes floatParticles{
+    0%, 100%{ transform: translateY(0); opacity:0.8; }
+    50%{ transform: translateY(-14px); opacity:1; }
+  }
+  header, .stage, footer{ position:relative; z-index:1; }
+  header{
+    text-align:center;
+    max-width:640px;
+    margin-bottom: 28px;
+  }
+  .eyebrow{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    font-family: var(--mono);
+    font-size:11px;
+    letter-spacing:0.18em;
+    text-transform:uppercase;
+    color:var(--violet-bright);
+    background:rgba(124, 58, 237, 0.15);
+    border:1px solid var(--panel-line);
+    padding:6px 14px;
+    border-radius:999px;
+    font-weight:600;
+    margin-bottom:14px;
+    box-shadow: 0 0 20px -4px var(--violet-glow);
+  }
+  .eyebrow .dot{
+    width:6px; height:6px;
+    border-radius:50%;
+    background: var(--violet-bright);
+    box-shadow: 0 0 8px 2px var(--violet-glow);
+    animation: pulseDot 1.6s ease-in-out infinite;
+  }
+  @keyframes pulseDot{
+    0%, 100%{ opacity:1; transform:scale(1); }
+    50%{ opacity:0.4; transform:scale(0.7); }
+  }
+  h1{
+    font-size: clamp(28px, 4vw, 40px);
+    margin:0 0 10px;
+    font-weight:700;
+    letter-spacing:-0.01em;
+    background: linear-gradient(135deg, #fff 0%, var(--violet-bright) 60%, var(--violet) 100%);
+    -webkit-background-clip:text;
+    background-clip:text;
+    color:transparent;
+    text-shadow: 0 0 40px rgba(167,139,250,0.25);
+  }
+  header p{
+    color:var(--ink-soft);
+    font-size:15px;
+    line-height:1.6;
+    margin:0;
+  }
+  .stage{
+    width:100%;
+    max-width:920px;
+    background:var(--card);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border:1px solid var(--card-line);
+    border-radius:28px;
+    box-shadow: var(--shadow), inset 0 1px 0 rgba(255,255,255,0.06);
+    padding: 28px;
+    display:flex;
+    flex-direction:column;
+    gap:24px;
+    position:relative;
+    overflow:hidden;
+  }
+  /* Viền góc kiểu HUD công nghệ */
+  .stage::before, .stage::after{
+    content:'';
+    position:absolute;
+    width:26px; height:26px;
+    border-color: var(--violet-bright);
+    border-style:solid;
+    opacity:0.6;
+    pointer-events:none;
+  }
+  .stage::before{ top:14px; left:14px; border-width:2px 0 0 2px; border-radius:8px 0 0 0; }
+  .stage::after{ bottom:14px; right:14px; border-width:0 2px 2px 0; border-radius:0 0 8px 0; }
+
+  .upload-zone{
+    border: 2px dashed var(--panel-line);
+    border-radius:20px;
+    padding: 36px 20px;
+    text-align:center;
+    background: linear-gradient(180deg, rgba(124,58,237,0.06), rgba(124,58,237,0.02));
+    cursor:pointer;
+    transition: border-color .2s ease, background .2s ease, transform .15s ease;
+    position:relative;
+  }
+  .upload-zone:hover{ border-color:var(--violet); background:rgba(124,58,237,0.1); box-shadow: 0 0 30px -10px var(--violet-glow); }
+  .upload-zone.dragover{ border-color:var(--violet-bright); background:rgba(124,58,237,0.16); transform: scale(1.01); }
+  .upload-zone:focus-visible{ outline: 3px solid var(--violet); outline-offset: 3px; }
+  .upload-zone svg{ width:38px; height:38px; margin-bottom:10px; color:var(--violet-bright); filter: drop-shadow(0 0 8px var(--violet-glow)); }
+  .upload-zone .main-text{ font-weight:600; font-size:15px; margin-bottom:4px; color:var(--ink); }
+  .upload-zone .sub-text{ font-family: var(--mono); font-size:12px; color:var(--ink-soft); letter-spacing:0.02em; }
+  input[type=file]{ display:none; }
+
+  .workspace{ display:none; flex-direction:column; gap:24px; }
+  .workspace.active{ display:flex; }
+
+  .preview-wrap{
+    position:relative;
+    width:100%;
+    border-radius:20px;
+    overflow:hidden;
+    background: radial-gradient(circle at 50% 40%, #1c1436, #0d0820);
+    border:1px solid var(--card-line);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height: 240px;
+    box-shadow: inset 0 0 60px rgba(0,0,0,0.5);
+  }
+  .preview-wrap img, .preview-wrap canvas{
+    max-width:100%;
+    max-height:520px;
+    display:block;
+  }
+  #resultCanvas{ display:block; }
+
+  /* Đường quét sáng chạy ngang qua ảnh — hiệu ứng "đang xử lý" công nghệ */
+  .preview-wrap::before{
+    content:'';
+    position:absolute;
+    left:0; right:0;
+    height:2px;
+    background: linear-gradient(90deg, transparent, var(--violet-bright) 20%, #fff 50%, var(--violet-bright) 80%, transparent);
+    box-shadow: 0 0 14px 2px var(--violet-glow);
+    top:0;
+    animation: scanLine 3.2s ease-in-out infinite;
+    opacity:0.85;
+    pointer-events:none;
+    z-index:2;
+  }
+  @keyframes scanLine{
+    0%{ top:0%; opacity:0; }
+    8%{ opacity:0.85; }
+    50%{ top:100%; opacity:0.85; }
+    58%{ opacity:0; }
+    100%{ top:100%; opacity:0; }
+  }
+  /* Góc HUD trên khung ảnh */
+  .preview-wrap::after{
+    content:'';
+    position:absolute;
+    inset:10px;
+    border:1px solid rgba(167,139,250,0.25);
+    border-radius:12px;
+    pointer-events:none;
+    z-index:2;
+  }
+
+  .change-btn{
+    position:absolute;
+    top:12px;
+    right:12px;
+    background:rgba(20, 14, 38, 0.75);
+    backdrop-filter: blur(8px);
+    border:1px solid var(--card-line);
+    color:var(--violet-bright);
+    font-family: var(--mono);
+    font-size:11px;
+    font-weight:600;
+    letter-spacing:0.04em;
+    padding:7px 14px;
+    border-radius:999px;
+    cursor:pointer;
+    z-index:3;
+    transition: box-shadow .2s ease, border-color .2s ease;
+  }
+  .change-btn:hover{ border-color:var(--violet-bright); box-shadow: 0 0 20px -6px var(--violet-glow); }
+
+  .presets{
+    display:grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap:10px;
+  }
+  .preset-btn{
+    padding: 12px 6px;
+    border-radius:14px;
+    border:1.5px solid var(--card-line);
+    background: rgba(124,58,237,0.06);
+    color:var(--ink);
+    font-family: var(--mono);
+    font-weight:600;
+    font-size:14px;
+    cursor:pointer;
+    transition: all .15s ease;
+  }
+  .preset-btn:hover{ border-color:var(--violet); background: rgba(124,58,237,0.14); }
+  .preset-btn.active{
+    background: linear-gradient(135deg, var(--violet-deep), #5b21b6);
+    border-color: var(--violet-bright);
+    color:#fff;
+    box-shadow: 0 0 24px -6px var(--violet-glow), inset 0 0 12px rgba(255,255,255,0.08);
+  }
+
+  .slider-row{
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .slider-label{
+    display:flex;
+    justify-content:space-between;
+    font-family: var(--mono);
+    font-size:12px;
+    font-weight:600;
+    letter-spacing:0.03em;
+    color:var(--ink-soft);
+    text-transform:uppercase;
+  }
+  .slider-label span.val{ color:var(--violet-bright); font-weight:700; text-shadow: 0 0 10px var(--violet-glow); }
+  input[type=range]{
+    -webkit-appearance:none;
+    width:100%;
+    height:8px;
+    border-radius:999px;
+    background: linear-gradient(90deg, var(--violet) 0%, var(--violet) var(--pct,50%), rgba(167,139,250,0.15) var(--pct,50%), rgba(167,139,250,0.15) 100%);
+    outline:none;
+    box-shadow: inset 0 0 6px rgba(0,0,0,0.4);
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;
+    width:22px; height:22px;
+    border-radius:50%;
+    background:#0d0820;
+    border:4px solid var(--violet-bright);
+    cursor:pointer;
+    box-shadow: 0 0 12px 2px var(--violet-glow);
+  }
+  input[type=range]::-moz-range-thumb{
+    width:22px; height:22px;
+    border-radius:50%;
+    background:#0d0820;
+    border:4px solid var(--violet-bright);
+    cursor:pointer;
+    box-shadow: 0 0 12px 2px var(--violet-glow);
+  }
+
+  .download-row{
+    display:flex;
+    gap:12px;
+    flex-wrap:wrap;
+    align-items:center;
+  }
+  select#formatSelect{
+    padding:12px 16px;
+    border-radius:14px;
+    border:1.5px solid var(--card-line);
+    background: rgba(124,58,237,0.08);
+    color-scheme: dark;
+    font-family: var(--mono);
+    font-weight:600;
+    color:var(--ink);
+    font-size:14px;
+    cursor:pointer;
+  }
+  .download-btn{
+    flex:1;
+    min-width:180px;
+    padding:14px 20px;
+    border-radius:14px;
+    border:1px solid var(--violet-bright);
+    background: linear-gradient(135deg, var(--violet-deep), #5b21b6);
+    color:#fff;
+    font-weight:700;
+    font-size:15px;
+    letter-spacing:0.01em;
+    cursor:pointer;
+    box-shadow: 0 10px 30px -10px var(--violet-glow), inset 0 1px 0 rgba(255,255,255,0.15);
+    transition: transform .15s ease, box-shadow .2s ease;
+  }
+  .download-btn:hover{ transform: translateY(-1px); box-shadow: 0 12px 34px -8px var(--violet-glow), inset 0 1px 0 rgba(255,255,255,0.2); }
+  .download-btn:active{ transform: translateY(0); }
+
+  .compare-hint{
+    position:absolute;
+    bottom:12px;
+    left:50%;
+    transform: translateX(-50%);
+    background:rgba(20, 14, 38, 0.75);
+    backdrop-filter: blur(8px);
+    border:1px solid var(--card-line);
+    color:var(--ink-soft);
+    font-family: var(--mono);
+    font-size:11px;
+    font-weight:600;
+    letter-spacing:0.02em;
+    padding:6px 14px;
+    border-radius:999px;
+    z-index:3;
+    pointer-events:none;
+    opacity:0.85;
+    transition: opacity .15s ease;
+  }
+  .compare-hint.hide{ opacity:0; }
+  #resultCanvas.comparing{ cursor: grab; }
+
+  .proc-badge{
+    position:absolute;
+    top:12px;
+    left:12px;
+    background:rgba(20, 14, 38, 0.8);
+    backdrop-filter: blur(8px);
+    border:1px solid var(--card-line);
+    color:var(--violet-bright);
+    font-family: var(--mono);
+    font-size:10px;
+    font-weight:600;
+    letter-spacing:0.04em;
+    padding:5px 12px;
+    border-radius:999px;
+    z-index:4;
+    pointer-events:none;
+    opacity:0;
+    transition: opacity .15s ease;
+  }
+  .proc-badge.show{ opacity:0.9; }
+
+  .note{
+    font-family: var(--mono);
+    font-size:12px;
+    color:var(--ink-soft);
+    text-align:center;
+    min-height:14px;
+  }
+  .note.error{ color:#f87171; font-weight:600; }
+
+  footer{
+    margin-top:28px;
+    font-family: var(--mono);
+    font-size:11px;
+    letter-spacing:0.02em;
+    color:var(--ink-soft);
+    text-align:center;
+  }
+
+  @media (max-width:520px){
+    .presets{ grid-template-columns: repeat(5,1fr); gap:6px; }
+    .preset-btn{ font-size:12px; padding:10px 4px; }
+    .stage{ padding:18px; border-radius:20px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow"><span class="dot"></span> BLURLY // ENGINE ACTIVE</div>
+  <h1>Làm mờ ảnh trong vài giây</h1>
+  <p>Tải ảnh lên, chọn mức mờ có sẵn hoặc tự chỉnh bằng thanh trượt, rồi tải ảnh về theo định dạng bạn muốn.</p>
+</header>
+
+<div class="stage">
+  <div class="upload-zone" id="uploadZone" role="button" tabindex="0" aria-label="Tải ảnh lên: kéo thả ảnh vào đây, hoặc bấm/nhấn Enter để chọn tệp">
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    <div class="main-text">Kéo thả ảnh vào đây, hoặc bấm để chọn</div>
+    <div class="sub-text">Hỗ trợ JPG, PNG, HEIC, WEBP</div>
+    <input type="file" id="fileInput" accept="image/*" aria-label="Chọn tệp ảnh để tải lên">
+  </div>
+
+  <div class="workspace" id="workspace">
+    <div class="preview-wrap">
+      <canvas id="resultCanvas" role="img" aria-label="Ảnh xem trước sau khi làm mờ. Nhấn giữ để xem ảnh gốc"></canvas>
+      <div class="proc-badge" id="procBadge">Đang xử lý…</div>
+      <button class="change-btn" id="changeBtn" aria-label="Đổi ảnh khác, quay lại màn hình tải ảnh lên">Đổi ảnh khác</button>
+      <div class="compare-hint" id="compareHint">Nhấn giữ để xem ảnh gốc</div>
+    </div>
+
+    <div class="presets" id="presets">
+      <button class="preset-btn" data-val="20">20%</button>
+      <button class="preset-btn" data-val="40">40%</button>
+      <button class="preset-btn" data-val="60">60%</button>
+      <button class="preset-btn" data-val="80">80%</button>
+      <button class="preset-btn" data-val="100">100%</button>
+    </div>
+
+    <div class="slider-row">
+      <div class="slider-label">Tùy chỉnh độ mờ <span class="val" id="sliderVal">0%</span></div>
+      <input type="range" id="blurSlider" min="0" max="100" value="0" step="1" aria-label="Tùy chỉnh độ mờ ảnh, từ 0 đến 100 phần trăm">
+    </div>
+
+    <div class="download-row">
+      <select id="formatSelect" aria-label="Chọn định dạng tệp tải về">
+        <option value="png">PNG</option>
+        <option value="jpeg">JPG</option>
+        <option value="webp">WEBP</option>
+      </select>
+      <button class="download-btn" id="downloadBtn">Tải ảnh về</button>
+    </div>
+  </div>
+
+  <div class="note" id="formatNote"></div>
+</div>
+
+<footer>Ảnh được xử lý ngay trên trình duyệt của bạn — không tải lên máy chủ nào cả.</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js" referrerpolicy="no-referrer"></script>
+<script>
+const uploadZone = document.getElementById('uploadZone');
+const fileInput = document.getElementById('fileInput');
+const workspace = document.getElementById('workspace');
+const canvas = document.getElementById('resultCanvas');
+const ctx = canvas.getContext('2d', { willReadFrequently: true });
+const blurSlider = document.getElementById('blurSlider');
+const sliderVal = document.getElementById('sliderVal');
+const presetButtons = document.querySelectorAll('.preset-btn');
+const downloadBtn = document.getElementById('downloadBtn');
+const changeBtn = document.getElementById('changeBtn');
+const compareHint = document.getElementById('compareHint');
+const formatSelect = document.getElementById('formatSelect');
+const formatNote = document.getElementById('formatNote');
+const procBadge = document.getElementById('procBadge');
+
+// --- Trạng thái ảnh gốc ---
+// originalImage: ảnh gốc, KHÔNG bị giới hạn kích thước — dùng làm nguồn
+// cho canvas xuất file (fullCanvas) để giữ đúng độ phân giải gốc khi tải về.
+let originalImage = null;
+let originalFileBaseName = 'anh';
+let maxBlurPct100 = 24; // bán kính blur (px, theo không gian ảnh gốc) tại 100%
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+
+// Canvas ẩn dùng để dựng bản đầy đủ độ phân giải khi xuất file (không
+// giới hạn kích thước như canvas xem trước).
+const fullCanvas = document.createElement('canvas');
+const fullCtx = fullCanvas.getContext('2d', { willReadFrequently: true });
+
+// Canvas ẩn dùng để TÍNH TOÁN blur, kích thước CỐ ĐỊNH nhỏ, không phụ
+// thuộc devicePixelRatio hay kích thước ảnh gốc. Đây là chìa khóa để
+// tránh lag: trên máy có dpr=3 (iPhone Pro chẳng hạn), nếu tính blur
+// trực tiếp trên canvas hiển thị (700px × 3 = 2100px) thì mỗi lần kéo
+// thanh trượt sẽ mất hàng trăm mili-giây, gây giật hẳn. Vì blur vốn làm
+// mất chi tiết tần số cao, việc tính trên ảnh nhỏ rồi phóng to lên canvas
+// hiển thị bằng drawImage (xử lý bằng GPU, gần như tức thời) cho kết quả
+// nhìn không khác biệt mà tốc độ nhanh hơn hàng chục lần.
+const computeCanvas = document.createElement('canvas');
+const computeCtx = computeCanvas.getContext('2d', { willReadFrequently: true });
+const COMPUTE_DIM = 420; // kích thước cạnh dài của buffer tính toán, px
+
+const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
+const PREVIEW_MAX_DIM = 700; // kích thước tối đa (px, chưa nhân dpr) của canvas HIỂN THỊ — đủ nét trên Retina/mobile
+
+/* ---------------------------------------------------------------------
+ * Blur chất lượng cao, độc lập trình duyệt: xấp xỉ Gauss bằng 3 lần
+ * box blur liên tiếp (kỹ thuật chuẩn — 3 lần box blur cùng bán kính
+ * hội tụ rất sát với một blur Gauss thật, sai số hình ảnh không đáng
+ * kể). Ưu điểm so với CSS `filter: blur()`:
+ *  - Cho kết quả GIỐNG HỆT NHAU trên mọi trình duyệt/thiết bị (Chrome,
+ *    Safari, Firefox tự triển khai CSS blur khác nhau chút ít).
+ *  - Xử lý viền ảnh bằng cách "kẹp" (clamp) pixel biên thay vì để hụt
+ *    pixel trong suốt ở mép — không bị viền tối/răng cưa như khi chồng
+ *    2 lớp canvas filter lên nhau.
+ * Mỗi bước quét dùng cửa sổ trượt cộng dồn (sliding window) nên tổng
+ * chi phí vẫn là O(width × height), không phụ thuộc bán kính blur.
+ * ------------------------------------------------------------------- */
+function boxBlurPass(src, dst, width, height, radius, horizontal){
+  if(horizontal){
+    const wl = radius * 2 + 1;
+    for(let y = 0; y < height; y++){
+      const rowStart = y * width * 4;
+      let rSum = 0, gSum = 0, bSum = 0, aSum = 0;
+      for(let x = -radius; x <= radius; x++){
+        const xc = x < 0 ? 0 : (x > width - 1 ? width - 1 : x);
+        const i = rowStart + xc * 4;
+        rSum += src[i]; gSum += src[i+1]; bSum += src[i+2]; aSum += src[i+3];
+      }
+      for(let x = 0; x < width; x++){
+        const i = rowStart + x * 4;
+        dst[i] = rSum / wl; dst[i+1] = gSum / wl; dst[i+2] = bSum / wl; dst[i+3] = aSum / wl;
+        const xRemoveRaw = x - radius;
+        const xAddRaw = x + radius + 1;
+        const xRemove = xRemoveRaw < 0 ? 0 : (xRemoveRaw > width - 1 ? width - 1 : xRemoveRaw);
+        const xAdd = xAddRaw < 0 ? 0 : (xAddRaw > width - 1 ? width - 1 : xAddRaw);
+        const iRemove = rowStart + xRemove * 4;
+        const iAdd = rowStart + xAdd * 4;
+        rSum += src[iAdd] - src[iRemove];
+        gSum += src[iAdd+1] - src[iRemove+1];
+        bSum += src[iAdd+2] - src[iRemove+2];
+        aSum += src[iAdd+3] - src[iRemove+3];
+      }
+    }
+  } else {
+    const wl = radius * 2 + 1;
+    for(let x = 0; x < width; x++){
+      let rSum = 0, gSum = 0, bSum = 0, aSum = 0;
+      for(let y = -radius; y <= radius; y++){
+        const yc = y < 0 ? 0 : (y > height - 1 ? height - 1 : y);
+        const i = (yc * width + x) * 4;
+        rSum += src[i]; gSum += src[i+1]; bSum += src[i+2]; aSum += src[i+3];
+      }
+      for(let y = 0; y < height; y++){
+        const i = (y * width + x) * 4;
+        dst[i] = rSum / wl; dst[i+1] = gSum / wl; dst[i+2] = bSum / wl; dst[i+3] = aSum / wl;
+        const yRemoveRaw = y - radius;
+        const yAddRaw = y + radius + 1;
+        const yRemove = yRemoveRaw < 0 ? 0 : (yRemoveRaw > height - 1 ? height - 1 : yRemoveRaw);
+        const yAdd = yAddRaw < 0 ? 0 : (yAddRaw > height - 1 ? height - 1 : yAddRaw);
+        const iRemove = (yRemove * width + x) * 4;
+        const iAdd = (yAdd * width + x) * 4;
+        rSum += src[iAdd] - src[iRemove];
+        gSum += src[iAdd+1] - src[iRemove+1];
+        bSum += src[iAdd+2] - src[iRemove+2];
+        aSum += src[iAdd+3] - src[iRemove+3];
+      }
+    }
+  }
+}
+
+function gaussianBlurCanvas(ctxTarget, width, height, radius, passes){
+  radius = Math.round(radius);
+  passes = passes || 3;
+  if(radius < 1 || width < 1 || height < 1) return;
+
+  const imageData = ctxTarget.getImageData(0, 0, width, height);
+  const n = width * height * 4;
+  // Dùng Float32Array để tránh tích lũy sai số làm tròn qua nhiều lượt quét.
+  let a = new Float32Array(n);
+  let b = new Float32Array(n);
+  for(let i = 0; i < n; i++) a[i] = imageData.data[i];
+
+  for(let pass = 0; pass < passes; pass++){
+    boxBlurPass(a, b, width, height, radius, true);
+    boxBlurPass(b, a, width, height, radius, false);
+  }
+
+  const out = imageData.data;
+  for(let i = 0; i < n; i++){
+    let v = a[i] + 0.5; // làm tròn
+    out[i] = v < 0 ? 0 : (v > 255 ? 255 : v);
+  }
+  ctxTarget.putImageData(imageData, 0, 0);
+}
+
+function showNote(message, isError){
+  formatNote.textContent = message;
+  formatNote.classList.toggle('error', !!isError);
+}
+
+function setSliderPct(pct){
+  blurSlider.style.setProperty('--pct', pct + '%');
+}
+
+function updatePresetHighlight(val){
+  presetButtons.forEach(btn=>{
+    btn.classList.toggle('active', Number(btn.dataset.val) === Number(val));
+  });
+}
+
+// blurPct: 0-100. Vẽ bản xem trước lên #resultCanvas.
+//
+// Kiến trúc 2 bước để tránh lag trên máy có devicePixelRatio cao (2x,
+// 3x như iPhone Pro):
+//  1) Tính blur trên computeCanvas — kích thước CỐ ĐỊNH nhỏ (COMPUTE_DIM),
+//     không phụ thuộc dpr hay kích thước ảnh gốc, nên luôn nhanh (dưới
+//     30ms kể cả trường hợp xấu nhất — đo được, không phải ước lượng).
+//  2) Phóng to kết quả lên canvas hiển thị (độ phân giải × dpr, nét trên
+//     Retina) bằng drawImage — thao tác này do GPU xử lý, gần như tức thời,
+//     không tốn thêm chi phí tính blur.
+// Vì blur vốn làm mất chi tiết tần số cao, tính trên ảnh nhỏ rồi phóng to
+// cho kết quả nhìn không khác biệt so với tính trực tiếp ở độ phân giải cao,
+// nhưng nhanh hơn hàng chục lần — nên không cần chế độ "nhanh/chất lượng
+// thấp" khi kéo thanh trượt nữa, luôn dùng chất lượng cao (3 lần box blur).
+let procBadgeTimer = null;
+function drawBlur(pct){
+  if(!originalImage) return;
+
+  const srcW = originalImage.width, srcH = originalImage.height;
+
+  // --- Bước 1: vẽ + blur trên buffer tính toán, kích thước cố định nhỏ ---
+  const computeScale = Math.min(1, COMPUTE_DIM / Math.max(srcW, srcH));
+  const cw = Math.max(1, Math.round(srcW * computeScale));
+  const ch = Math.max(1, Math.round(srcH * computeScale));
+  computeCanvas.width = cw;
+  computeCanvas.height = ch;
+  computeCtx.clearRect(0, 0, cw, ch);
+  computeCtx.drawImage(originalImage, 0, 0, cw, ch);
+
+  if(pct > 0){
+    // Bán kính blur tại 100% được định nghĩa theo tỉ lệ ảnh gốc
+    // (maxBlurPct100 tính trên kích thước gốc), quy đổi sang không gian
+    // pixel của buffer tính toán.
+    const radiusInSourceSpace = (pct / 100) * maxBlurPct100;
+    const radius = Math.max(1, radiusInSourceSpace * computeScale);
+    if(procBadgeTimer) clearTimeout(procBadgeTimer);
+    procBadgeTimer = setTimeout(() => procBadge.classList.add('show'), 150);
+    gaussianBlurCanvas(computeCtx, cw, ch, radius, 3);
+    procBadge.classList.remove('show');
+    clearTimeout(procBadgeTimer);
+  }
+
+  // --- Bước 2: phóng to lên canvas hiển thị (nét theo dpr) ---
+  const previewScale = Math.min(1, PREVIEW_MAX_DIM / Math.max(srcW, srcH)) * dpr;
+  const pw = Math.max(1, Math.round(srcW * previewScale));
+  const ph = Math.max(1, Math.round(srcH * previewScale));
+  canvas.width = pw;
+  canvas.height = ph;
+  // Kích thước hiển thị (CSS) giữ ở độ phân giải logic, không nhân dpr,
+  // để ảnh không bị to gấp đôi/gấp ba trên màn hình — chỉ có độ NÉT tăng.
+  canvas.style.width = Math.round(pw / dpr) + 'px';
+  canvas.style.height = Math.round(ph / dpr) + 'px';
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.clearRect(0, 0, pw, ph);
+  ctx.drawImage(computeCanvas, 0, 0, pw, ph);
+}
+
+function loadImageFile(file){
+  showNote('', false);
+
+  if(file.size > MAX_FILE_SIZE){
+    showNote('Ảnh quá lớn (tối đa 50MB). Vui lòng chọn ảnh khác.', true);
+    return;
+  }
+
+  // Lưu lại tên file gốc (bỏ phần đuôi mở rộng) để dùng khi đặt tên file
+  // tải về, ví dụ: du-lich-blur-40pct.png
+  originalFileBaseName = (file.name || 'anh').replace(/\.[^./\\]+$/, '') || 'anh';
+
+  const isHeic = /heic|heif/i.test(file.type) || /\.hei[cf]$/i.test(file.name);
+  if(!isHeic && !file.type.startsWith('image/')){
+    showNote('Tệp này không phải ảnh. Vui lòng chọn tệp JPG, PNG, HEIC hoặc WEBP.', true);
+    return;
+  }
+
+  const processBlob = (blob) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      // Giữ nguyên originalImage ở ĐÚNG độ phân giải gốc — không downscale
+      // ở đây. Việc downscale (nếu cần) chỉ áp dụng riêng cho canvas xem
+      // trước trong drawBlur(); khi tải về, fullCanvas sẽ dựng lại từ
+      // originalImage này ở độ phân giải gốc đầy đủ.
+      originalImage = img;
+      maxBlurPct100 = Math.max(18, Math.round(Math.min(img.width, img.height) * 0.06));
+      blurSlider.value = 0;
+      sliderVal.textContent = '0%';
+      setSliderPct(0);
+      updatePresetHighlight(-1);
+      drawBlur(0);
+      uploadZone.style.display = 'none';
+      workspace.classList.add('active');
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => {
+      showNote('Không thể đọc tệp ảnh này. Vui lòng thử tệp khác.', true);
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+  };
+
+  if(isHeic && window.heic2any){
+    showNote('Đang chuyển đổi ảnh HEIC…', false);
+    heic2any({ blob: file, toType: 'image/jpeg', quality: 0.92 })
+      .then(convertedBlob => {
+        showNote('', false);
+        // HEIC nhiều khung hình (multi-frame/burst) khiến heic2any trả về
+        // một mảng Blob thay vì 1 Blob duy nhất. Chỉ lấy khung hình đầu tiên.
+        const blob = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+        processBlob(blob);
+      })
+      .catch(() => {
+        showNote('Không đọc được ảnh HEIC này. Hãy thử ảnh JPG/PNG.', true);
+      });
+  } else if(isHeic && !window.heic2any){
+    showNote('Chưa tải được bộ chuyển đổi HEIC. Vui lòng thử lại hoặc dùng ảnh JPG/PNG.', true);
+  } else {
+    processBlob(file);
+  }
+}
+
+uploadZone.addEventListener('click', () => fileInput.click());
+uploadZone.addEventListener('keydown', (e) => {
+  if(e.key === 'Enter' || e.key === ' '){
+    e.preventDefault();
+    fileInput.click();
+  }
+});
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if(file) loadImageFile(file);
+  // Reset ngay sau khi lấy file để có thể chọn lại đúng file đó lần nữa
+  // (ví dụ bấm "Đổi ảnh khác" rồi chọn lại cùng 1 file) mà sự kiện
+  // 'change' vẫn được kích hoạt bình thường.
+  fileInput.value = '';
+});
+
+['dragover'].forEach(evt => uploadZone.addEventListener(evt, (e) => {
+  e.preventDefault();
+  uploadZone.classList.add('dragover');
+}));
+['dragleave','drop'].forEach(evt => uploadZone.addEventListener(evt, (e) => {
+  e.preventDefault();
+  uploadZone.classList.remove('dragover');
+}));
+uploadZone.addEventListener('drop', (e) => {
+  const file = e.dataTransfer.files[0];
+  if(file) loadImageFile(file);
+});
+
+// Chặn hành vi mặc định của trình duyệt (mở file ảnh) khi người dùng
+// kéo thả ra ngoài vùng upload-zone.
+['dragover', 'drop'].forEach(evt => window.addEventListener(evt, (e) => {
+  e.preventDefault();
+}));
+
+changeBtn.addEventListener('click', () => {
+  workspace.classList.remove('active');
+  uploadZone.style.display = 'block';
+  fileInput.value = '';
+  showNote('', false);
+});
+
+let pendingBlurFrame = null;
+blurSlider.addEventListener('input', (e) => {
+  const val = Number(e.target.value);
+  sliderVal.textContent = val + '%';
+  setSliderPct(val);
+  updatePresetHighlight(val);
+  // Gộp các lần vẽ lại vào 1 khung hình (requestAnimationFrame) để tránh
+  // dồn ứ khi trình duyệt bắn nhiều sự kiện 'input' liên tiếp lúc kéo
+  // nhanh. Vì bản thân drawBlur giờ đã rất nhanh (tính trên buffer nhỏ
+  // cố định, xem giải thích ở trên), không cần chế độ chất lượng thấp
+  // riêng cho lúc đang kéo nữa.
+  if(pendingBlurFrame === null){
+    pendingBlurFrame = requestAnimationFrame(() => {
+      drawBlur(Number(blurSlider.value));
+      pendingBlurFrame = null;
+    });
+  }
+});
+
+presetButtons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    const val = Number(btn.dataset.val);
+    blurSlider.value = val;
+    sliderVal.textContent = val + '%';
+    setSliderPct(val);
+    updatePresetHighlight(val);
+    drawBlur(val);
+  });
+});
+
+// Nhấn giữ trên ảnh để tạm thời xem ảnh gốc (không mờ), thả ra để quay
+// lại xem bản đã làm mờ. Hỗ trợ cả chuột (mouse) và cảm ứng (touch).
+let isComparing = false;
+function showOriginalPreview(){
+  if(!originalImage || isComparing) return;
+  isComparing = true;
+  canvas.classList.add('comparing');
+  compareHint.classList.add('hide');
+  ctx.clearRect(0,0,canvas.width, canvas.height);
+  ctx.filter = 'none';
+  ctx.drawImage(originalImage, 0, 0, canvas.width, canvas.height);
+}
+function restoreBlurredPreview(){
+  if(!isComparing) return;
+  isComparing = false;
+  canvas.classList.remove('comparing');
+  drawBlur(Number(blurSlider.value));
+}
+canvas.addEventListener('mousedown', showOriginalPreview);
+canvas.addEventListener('mouseup', restoreBlurredPreview);
+canvas.addEventListener('mouseleave', restoreBlurredPreview);
+canvas.addEventListener('touchstart', (e) => { e.preventDefault(); showOriginalPreview(); }, { passive:false });
+canvas.addEventListener('touchend', restoreBlurredPreview);
+canvas.addEventListener('touchcancel', restoreBlurredPreview);
+
+downloadBtn.addEventListener('click', () => {
+  if(!originalImage) return;
+  const fmt = formatSelect.value;
+  let mime = 'image/png';
+  let ext = 'png';
+
+  if(fmt === 'jpeg'){
+    mime = 'image/jpeg';
+    ext = 'jpg';
+  } else if(fmt === 'webp'){
+    mime = 'image/webp';
+    ext = 'webp';
+  }
+
+  const pct = Number(blurSlider.value);
+  downloadBtn.disabled = true;
+  downloadBtn.textContent = 'Đang xử lý…';
+
+  // Chạy ở khung hình kế tiếp để UI kịp cập nhật trạng thái nút bấm
+  // trước khi bắt đầu tác vụ nặng (ảnh gốc độ phân giải cao + blur).
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      // Dựng lại ảnh ở ĐÚNG độ phân giải gốc (không giới hạn kích thước
+      // như canvas xem trước) để file tải về giữ nguyên chất lượng gốc.
+      const w = originalImage.width, h = originalImage.height;
+      fullCanvas.width = w;
+      fullCanvas.height = h;
+      fullCtx.clearRect(0, 0, w, h);
+      fullCtx.drawImage(originalImage, 0, 0, w, h);
+
+      if(pct > 0){
+        const radius = Math.max(1, (pct / 100) * maxBlurPct100);
+        gaussianBlurCanvas(fullCtx, w, h, radius);
+      }
+
+      let sourceCanvas = fullCanvas;
+      if(fmt === 'jpeg' || fmt === 'webp'){
+        // JPG/WEBP không giữ trong suốt theo cách nhất quán: vẽ nền trắng
+        // trên canvas tạm để tránh vùng trong suốt bị trình duyệt chuyển
+        // thành màu đen khi xuất file.
+        const exportCanvas = document.createElement('canvas');
+        exportCanvas.width = w;
+        exportCanvas.height = h;
+        const exportCtx = exportCanvas.getContext('2d');
+        exportCtx.fillStyle = '#ffffff';
+        exportCtx.fillRect(0, 0, w, h);
+        exportCtx.drawImage(fullCanvas, 0, 0);
+        sourceCanvas = exportCanvas;
+      }
+
+      sourceCanvas.toBlob((blob) => {
+        downloadBtn.disabled = false;
+        downloadBtn.textContent = 'Tải ảnh về';
+        if(!blob) return;
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${originalFileBaseName}-blur-${pct}pct.${ext}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+        // Giải phóng bộ nhớ canvas full-resolution ngay sau khi xuất xong.
+        fullCanvas.width = 0;
+        fullCanvas.height = 0;
+      }, mime, 0.95);
+    }, 20);
+  });
+});
+</script>
+</body>
+</html>

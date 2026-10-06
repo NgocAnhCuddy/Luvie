@@ -1,0 +1,1324 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Password Generator</title>
+  <meta name="description" content="Tạo mật khẩu ngẫu nhiên an toàn — CSPRNG, segment hoặc passphrase, không ký tự nhầm lẫn" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Nunito:wght@400;600;700;800;900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.10/babel.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      /* Purple pastel theme (default) — nâng cấp đậm đà hơn */
+      --bg:          #f1eaff;
+      --bg-grad-a:   rgba(168,120,255,0.30);
+      --bg-grad-b:   rgba(230,170,255,0.24);
+      --bg-grad-c:   rgba(140,100,255,0.16);
+      --surface:     rgba(255,255,255,0.68);
+      --surface-2:   rgba(255,255,255,0.52);
+      --border:      rgba(150,100,255,0.22);
+      --border-hi:   rgba(150,100,255,0.45);
+      --text:        #2a1a5e;
+      --text-sub:    #7864a8;
+      --muted:       #a496cc;
+      --accent:      #8b5cf6;
+      --accent-2:    #a855f7;
+      --accent-lo:   rgba(139,92,246,0.13);
+      --accent-hi:   rgba(139,92,246,0.4);
+      --accent-btn:  linear-gradient(135deg,#9f75ff 0%,#c084fc 50%,#e084fc 100%);
+      --accent-glow: rgba(167,139,250,0.42);
+      --col-upper:   #7c3aed;
+      --col-digit:   #059669;
+      --col-lower:   #374151;
+      --col-symbol:  #d97706;
+      --sep-color:   #c4b5fd;
+      --thumb-color: #8b5cf6;
+      --track-fill:  linear-gradient(90deg,#8b5cf6,#c084fc);
+      --track-fill-solid: #8b5cf6;
+      --track-bg:    rgba(139,92,246,0.16);
+      --font-mono:   'JetBrains Mono', 'Courier New', monospace;
+      --font-ui:     'Inter', sans-serif;
+      --radius:      18px;
+      --radius-sm:   11px;
+      --shadow:      0 10px 44px rgba(139,92,246,0.18), 0 2px 8px rgba(139,92,246,0.1);
+    }
+
+    :root.pink {
+      --bg:          #fff0f6;
+      --bg-grad-a:   rgba(255,180,210,0.26);
+      --bg-grad-b:   rgba(255,200,230,0.2);
+      --bg-grad-c:   rgba(255,150,190,0.14);
+      --surface:     rgba(255,255,255,0.72);
+      --surface-2:   rgba(255,255,255,0.55);
+      --border:      rgba(255,130,180,0.22);
+      --border-hi:   rgba(255,100,160,0.42);
+      --text:        #5a1a3a;
+      --text-sub:    #b06080;
+      --muted:       #d89ab0;
+      --accent:      #ec4899;
+      --accent-2:    #f472b6;
+      --accent-lo:   rgba(236,72,153,0.11);
+      --accent-hi:   rgba(236,72,153,0.38);
+      --accent-btn:  linear-gradient(135deg,#f472b6 0%,#fb7185 50%,#fb9db1 100%);
+      --accent-glow: rgba(244,114,182,0.42);
+      --col-upper:   #be185d;
+      --col-digit:   #047857;
+      --col-lower:   #374151;
+      --col-symbol:  #b45309;
+      --sep-color:   #fbcfe8;
+      --thumb-color: #ec4899;
+      --track-fill:  linear-gradient(90deg,#ec4899,#fb7185);
+      --track-fill-solid: #ec4899;
+      --track-bg:    rgba(236,72,153,0.16);
+      --shadow:      0 10px 44px rgba(236,72,153,0.18), 0 2px 8px rgba(236,72,153,0.1);
+    }
+
+    html { height: 100%; }
+    body {
+      min-height: 100%;
+      background: var(--bg);
+      background-image:
+        radial-gradient(ellipse 90% 55% at 15% -5%, var(--bg-grad-a) 0%, transparent 60%),
+        radial-gradient(ellipse 70% 45% at 90% 105%, var(--bg-grad-b) 0%, transparent 60%),
+        radial-gradient(ellipse 55% 40% at 50% 45%, var(--bg-grad-c) 0%, transparent 65%);
+      background-attachment: fixed;
+      color: var(--text);
+      font-family: var(--font-ui);
+      -webkit-font-smoothing: antialiased;
+      transition: background 0.4s ease, color 0.3s ease;
+    }
+
+    #root {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+      padding-bottom: max(24px, env(safe-area-inset-bottom));
+    }
+
+    /* ── Range input ── */
+    input[type=range] {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 6px;
+      background: var(--track-bg);
+      border-radius: 3px;
+      outline: none;
+      cursor: pointer;
+    }
+    input[type=range]::-webkit-slider-runnable-track {
+      height: 6px;
+      border-radius: 3px;
+      background: linear-gradient(
+        to right,
+        var(--track-fill-solid) 0%,
+        var(--track-fill-solid) var(--pct, 50%),
+        var(--track-bg) var(--pct, 50%),
+        var(--track-bg) 100%
+      );
+    }
+    input[type=range]::-moz-range-track {
+      height: 6px;
+      border-radius: 3px;
+      background: var(--track-bg);
+    }
+    input[type=range]::-moz-range-progress {
+      height: 6px;
+      border-radius: 3px;
+      background: var(--track-fill-solid);
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 19px; height: 19px;
+      border-radius: 50%;
+      background: var(--thumb-color);
+      cursor: pointer;
+      box-shadow: 0 0 0 3px rgba(139,92,246,0.22), 0 2px 8px rgba(0,0,0,0.18);
+      transition: box-shadow 0.15s, transform 0.1s;
+      margin-top: -6.5px;
+      border: 2px solid #fff;
+    }
+    input[type=range]::-webkit-slider-thumb:active {
+      box-shadow: 0 0 0 7px var(--accent-hi);
+      transform: scale(1.1);
+    }
+    input[type=range]::-moz-range-thumb {
+      width: 19px; height: 19px;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      background: var(--thumb-color);
+      cursor: pointer;
+      box-shadow: 0 0 0 3px var(--accent-lo);
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ── Animations ── */
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeSlideUp {
+      from { opacity: 0; transform: translateY(14px) scale(0.97); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes pop {
+      0%   { transform: scale(1); }
+      50%  { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
+    @keyframes themeToggle {
+      0%   { transform: scale(1) rotate(0deg); }
+      50%  { transform: scale(1.15) rotate(180deg); }
+      100% { transform: scale(1) rotate(360deg); }
+    }
+    @keyframes floatGlow {
+      0%, 100% { transform: translate(0,0) scale(1); }
+      50%      { transform: translate(6px,-8px) scale(1.05); }
+    }
+    @keyframes shimmer {
+      0%   { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+
+    .pw-row { animation: fadeSlideIn 0.22s ease both; }
+    .pw-row:nth-child(1) { animation-delay:  0ms; }
+    .pw-row:nth-child(2) { animation-delay: 45ms; }
+    .pw-row:nth-child(3) { animation-delay: 90ms; }
+    .pw-row:nth-child(4) { animation-delay:135ms; }
+    .pw-row:nth-child(5) { animation-delay:180ms; }
+
+    .spin-svg { animation: spin 0.6s linear infinite; display:inline-block; }
+
+    .pw-row:hover  { background: var(--accent-lo) !important; }
+    .pw-row:active { transform: scale(0.99); }
+
+    /* ── Mode tabs ── */
+    .mode-tabs {
+      display: flex;
+      gap: 6px;
+      padding: 5px;
+      background: var(--surface-2);
+      border: 1.5px solid var(--border);
+      border-radius: 14px;
+      margin-bottom: 14px;
+    }
+    .mode-tab {
+      flex: 1;
+      padding: 10px 8px;
+      border-radius: 10px;
+      border: none;
+      background: transparent;
+      color: var(--text-sub);
+      font-size: 13px;
+      font-weight: 700;
+      font-family: var(--font-ui);
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(.4,0,.2,1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .mode-tab.active {
+      background: var(--accent-btn);
+      color: #fff;
+      box-shadow: 0 4px 16px var(--accent-glow);
+    }
+    .mode-tab:not(.active):hover { background: var(--accent-lo); color: var(--accent); }
+
+    /* ── Sep button ── */
+    .sep-btn {
+      flex: 1;
+      padding: 9px 4px;
+      border-radius: var(--radius-sm);
+      border: 1.5px solid var(--border);
+      background: var(--surface-2);
+      color: var(--muted);
+      font-size: 12px;
+      font-family: var(--font-ui);
+      cursor: pointer;
+      transition: all 0.15s;
+      line-height: 1.3;
+    }
+    .sep-btn:hover  { border-color: var(--accent-hi); color: var(--text-sub); }
+    .sep-btn.active {
+      border-color: var(--accent-hi);
+      background: var(--accent-lo);
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    /* ── Custom separator input ── */
+    .custom-sep-input {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      border: 1.5px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text);
+      font-size: 13px;
+      font-family: var(--font-mono);
+      text-align: center;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .custom-sep-input:focus { border-color: var(--accent-hi); background: var(--accent-lo); }
+
+    /* ── Generate button ── */
+    .gen-btn {
+      width: 100%;
+      padding: 16px;
+      background: var(--accent-btn);
+      background-size: 200% auto;
+      border: none;
+      border-radius: var(--radius);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 800;
+      font-family: var(--font-ui);
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s, background-position 0.4s;
+      box-shadow: 0 6px 26px var(--accent-glow);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .gen-btn:hover  { box-shadow: 0 8px 34px var(--accent-glow); transform: translateY(-1px); background-position: right center; }
+    .gen-btn:active { transform: scale(0.98); }
+    .gen-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+
+    /* ── Copy-all button ── */
+    .copy-all-btn {
+      width: 100%;
+      padding: 11px;
+      border-radius: var(--radius-sm);
+      border: 1.5px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text-sub);
+      font-size: 12.5px;
+      font-family: var(--font-ui);
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .copy-all-btn:hover  { border-color: var(--accent-hi); color: var(--accent); background: var(--accent-lo); }
+    .copy-all-btn:active { transform: scale(0.98); }
+
+    /* ── Theme toggle ── */
+    .theme-btn {
+      position: fixed;
+      top: 16px; right: 16px;
+      width: 42px; height: 42px;
+      border-radius: 50%;
+      border: 1.5px solid var(--border);
+      background: var(--surface);
+      color: var(--accent);
+      font-size: 18px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: var(--shadow);
+      transition: border-color 0.2s, background 0.3s, box-shadow 0.2s;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      z-index: 50;
+    }
+    .theme-btn:hover { box-shadow: 0 4px 22px var(--accent-glow); border-color: var(--accent-hi); }
+    .theme-btn.animating { animation: themeToggle 0.45s ease; }
+
+    /* ── History panel ── */
+    .history-item {
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: var(--text-sub);
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      user-select: none;
+      animation: fadeSlideIn 0.18s ease both;
+    }
+    .history-item:hover { background: var(--accent-lo); border-color: var(--border-hi); color: var(--text); }
+
+    /* ── Card ── */
+    .card {
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      transition: border-color 0.3s, background 0.3s, box-shadow 0.3s;
+      position: relative;
+      overflow: hidden;
+    }
+    .card::before {
+      content: "";
+      position: absolute;
+      top: -40%; right: -20%;
+      width: 160px; height: 160px;
+      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+      opacity: 0.5;
+      pointer-events: none;
+      animation: floatGlow 8s ease-in-out infinite;
+    }
+
+    /* Hidden password mask */
+    .masked { filter: blur(6px); transition: filter 0.25s; user-select: none; }
+
+    /* ══ DYNAMIC ISLAND TOAST ══ */
+    @keyframes _di-in {
+      0%  { width:36px;  height:36px;  border-radius:50%;  opacity:0; transform:translateX(-50%) scaleY(.6); }
+      20% { width:36px;  height:36px;  border-radius:50%;  opacity:1; transform:translateX(-50%) scaleY(1); }
+      55% { width:280px; height:52px;  border-radius:26px; opacity:1; transform:translateX(-50%) scaleY(1); }
+      100%{ width:300px; height:56px;  border-radius:28px; opacity:1; transform:translateX(-50%) scaleY(1); }
+    }
+    @keyframes _di-out {
+      0%  { width:300px; height:56px;  border-radius:28px; opacity:1; transform:translateX(-50%) scaleY(1); }
+      40% { width:280px; height:52px;  border-radius:26px; opacity:1; transform:translateX(-50%) scaleY(1); }
+      75% { width:36px;  height:36px;  border-radius:50%;  opacity:1; transform:translateX(-50%) scaleY(1); }
+      100%{ width:36px;  height:36px;  border-radius:50%;  opacity:0; transform:translateX(-50%) scaleY(.6); }
+    }
+    @keyframes _di-content-in {
+      0%,40%{ opacity:0; transform:scale(.85) translateY(3px); }
+      100%  { opacity:1; transform:scale(1) translateY(0); }
+    }
+    ._di-pill {
+      position:fixed; top:14px; left:50%;
+      transform:translateX(-50%); transform-origin:center top;
+      z-index:999999;
+      background:linear-gradient(135deg,rgba(14,6,14,.97) 0%,rgba(26,10,20,.97) 100%);
+      display:flex; align-items:center;
+      gap:11px; padding:0 16px; cursor:pointer; user-select:none; overflow:hidden;
+      will-change:width,height,border-radius,opacity;
+    }
+    ._di-halo {
+      position:absolute; left:14px; top:50%; transform:translateY(-50%);
+      width:30px; height:30px; border-radius:50%;
+      opacity:.15; filter:blur(9px); pointer-events:none;
+    }
+    ._di-icon-box {
+      flex-shrink:0; position:relative; z-index:1;
+      display:flex; align-items:center; justify-content:center;
+      width:30px; height:30px; border-radius:10px;
+    }
+    ._di-icon-box svg { display:block; }
+    ._di-body {
+      flex:1; min-width:0; position:relative; z-index:1;
+      animation:_di-content-in .55s cubic-bezier(.34,1.3,.64,1) both;
+    }
+    ._di-label {
+      font-size:9px; font-weight:800; letter-spacing:.6px; text-transform:uppercase;
+      font-family:'Nunito',sans-serif; margin-bottom:1px;
+    }
+    ._di-msg {
+      font-size:14px; font-weight:900; color:#f0e6ff;
+      font-family:'Nunito',sans-serif; overflow:hidden; text-overflow:ellipsis;
+      white-space:nowrap; line-height:1.2;
+    }
+    ._di-dot {
+      flex-shrink:0; width:5px; height:5px; border-radius:50%;
+      background:rgba(255,255,255,.22); position:relative; z-index:1;
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+/* ══════════════════════════════════════════════════
+   DYNAMIC ISLAND TOAST — ported from Learnsy toast.js
+══════════════════════════════════════════════════ */
+const _diConfig = {
+  success:{ color:'#10B981', svg:'<polyline points="20 6 9 17 4 12" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>' },
+  error:  { color:'#f87171', svg:'<line x1="18" y1="6" x2="6" y2="18" stroke-width="2.6" stroke-linecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke-width="2.6" stroke-linecap="round"/>' },
+  warn:   { color:'#fbbf24', svg:'<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="9" x2="12" y2="13" stroke-width="2.5" stroke-linecap="round"/><circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/>' },
+  info:   { color:'#a78bfa', svg:'<polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>' },
+};
+
+let _diActive = null;
+function showDiToast(msg, type='info', duration=2600){
+  if (_diActive) _diDismiss(_diActive, true);
+
+  const cfg = _diConfig[type] || _diConfig.info;
+  const c = cfg.color;
+
+  const pill = document.createElement('div');
+  pill.className = '_di-pill';
+  pill.style.cssText += `box-shadow:0 0 0 1.5px rgba(255,255,255,.09),0 10px 32px rgba(0,0,0,.6),0 0 22px ${c}44;`;
+  pill.style.animation = '_di-in .55s cubic-bezier(.34,1.3,.64,1) both';
+
+  const halo = document.createElement('div');
+  halo.className = '_di-halo';
+  halo.style.background = c;
+
+  const iconBox = document.createElement('div');
+  iconBox.className = '_di-icon-box';
+  iconBox.style.background = c + '22';
+  iconBox.style.border = `1.5px solid ${c}55`;
+  iconBox.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="${c}">${cfg.svg}</svg>`;
+
+  const body = document.createElement('div');
+  body.className = '_di-body';
+
+  const lbl = document.createElement('div');
+  lbl.className = '_di-label';
+  lbl.style.color = c;
+  lbl.textContent = 'PassGen';
+
+  const txt = document.createElement('div');
+  txt.className = '_di-msg';
+  txt.textContent = msg;
+
+  const dot = document.createElement('div');
+  dot.className = '_di-dot';
+
+  body.append(lbl, txt);
+  pill.append(halo, iconBox, body, dot);
+  document.body.appendChild(pill);
+
+  pill.addEventListener('click', () => _diDismiss(pill));
+  _diActive = pill;
+  const t = setTimeout(() => _diDismiss(pill), duration);
+  pill._diTimer = t;
+}
+
+function _diDismiss(pill, immediate=false){
+  if (!pill || !pill.isConnected) return;
+  if (pill._diTimer) clearTimeout(pill._diTimer);
+  if (_diActive === pill) _diActive = null;
+  if (immediate) { pill.remove(); return; }
+  pill.style.animation = '_di-out .45s cubic-bezier(.55,0,.45,1) both';
+  setTimeout(() => pill.remove(), 450);
+}
+
+/* ── Bug fix: DIGIT không trùng, không thiếu số 5 ── */
+const UPPER    = "ABCDEFGHJKLMNPQRTUVWXYZ";
+const LOWER    = "abcdefghjkmnpqrtuvwxyz";
+const DIGIT    = "23456789";
+const SYMBOL   = "@#$%^&*!?~+-=";
+const ALL_BASE = UPPER + LOWER + DIGIT;
+
+/* ── Wordlist for passphrase mode (EFF-style short list, ~1000 words) ── */
+const WORDLIST = "able acid aged also area army away baby back ball band bank barn base bath beam bear beat been bell belt bend best bike bird bite blue boat body bold bolt bone book boot born boss both bowl brag brew brick brief bring brush build burn bush busy cake calm camp card care cart case cash cast cave chair chalk chase cheap check chef chew chief child chip city claim clam clap class claw clay clean clear clerk climb clip clock cloth cloud club coach coal coast coat code coin cold comb cook cool copy cord core corn cost couch count court cover crab craft crane crash crawl crazy cream crew crime crisp crop cross crowd crown crush cure curl cute daily dance dark dash dawn deal debt deep deer demo dense desk diet dime dirt disk dive dock dodge dome door doubt dough draft drag drain drama draw dream dress drift drill drink drive drop drum dry duck dull dust duty each earn easy edge eight elbow elder empty entry equal erase error essay even exam exit face fact fade fail fair fake fall farm fast fate fault favor fear feed feel feet fell felt fence field fifth fight film find fine fire firm first fish five flag flame flash flat fleet flesh flip float flock flow fluid flute foam focus fold folk food fool foot force fork form fort forth found frame frank free frost fruit fuel full fund funny gain game gaze gear gene gift glad glass glide glow goal gold golf good goose grace grade grain grand grant grape graph grass grave gray great green greet grid grief grill grind grip grow guard guess guest guide gulf halt hand hang happy hard harm harsh haste hatch have hawk hazy head heal heat help herb high hill hint hire hold hole home honey hood hook hope horn horse host hour huge hull hunt hurl hurt idea idle image inch info inner into iron issue item ivory jazz join joke jolly joy judge juice jump junk keep kept key kind king kite knee knife knock know label lace lack lady lake lamp land lane large last late laugh layer lazy lead leaf lean leap learn least leave lend less letter level lever light like limb limit line link lion list live load loan lobby local lock lodge logic lone long look loop loose lord lose loss loud love lower loyal lucky lunch lung lure lyric magic maker mango maple march mark mask mass match maze meal mean meat medal melt memo mend mercy merge merit mesh metal might mild milk mind mine minor mint minus mist mode model moist mold monk month mood moon moral more moss most motor mount mouse mouth move much mule mummy music mute myth nail naive name nasty near neat neck need nerve nest never news next nice night noble noise none noon norm north nose note noun novel numb nurse oath obey ocean odd offer often oil old olive omit once onto open orbit order organ other otter ounce outer owl pace pack page pain paint pair panel panic paper park part pass past path pause peace peak pearl pedal peer pen pencil people pepper phase phone photo piano pick pile pilot pinch pine pink pipe pitch pizza place plain plan plane plant plate play plot plug plus point poise poker polar pole pond pool poor porch pork port pose posh post pound power press price pride prime print prior prize proof prose proud prove pulse pump punch pure purse push quest queue quick quiet quilt quirk quiz quote race rack radio raft rage rail rain raise rally ramp ranch range rank rapid rare rate reach react ready realm rebel recap redo reef refer relax relay renew reply reset resin resist rest retro reuse rice rich ride ridge rifle right ring rinse riot ripen rise risk rival river roast robe robot rock role roll roof room root rope rose rough round route royal ruin rule rural rush rust sack safe sail salad salt same sand save scale scan scarf scene scent scoop scope score scout scrap screw seal seat sedan seek seem self sell send sense serve set shade shake shame shape share shark sharp shed sheep sheet shelf shell shift shine ship shirt shock shoe shoot shop shore short shout show shred shrug shy sight sign silk silly since sing size skate skill skin skip skirt sky slab slam slap slate sled sleep slice slide slim slip slope slot slow small smart smash smell smile smoke snack snake snap sneak snow soap soar social sock soda soft solar solid solo song sooth sound soup south space spade spare spark speak speed spell spend spice spike spine spiral spoke spoon sport spot spout spray spring spy squad stack staff stage stain stair stall stamp stand star start state stay steel steep steer stem step stern stick sting stock stone stop store storm story stove strap straw stray strict strong study stuff style suit summit sunny super swap sweat sweep sweet swift swing swirl sword table tag tail take tale talk tall tank tape target task taste team teeth tell tempo tend tent term test text than thank theme thick thin thing think third thorn thread throw thumb thump tide tiger tight tile time tiny title toast today toe tone tool tooth topic torch total touch tough tour towel tower town toxic trace track trade trail train trait trap trash tray treat tree trend trial trick trim trip troop truck true trust truth tube tune turf turn tusk twice twin twist type ultra uncle under union unit until upper urban usage user usual valid value vapor vast vault vein velvet venue verb verse very vessel vibe video view villa vine vinyl viral virus visa visit vital vivid voice void volt voter wagon waist wake walk wall want warm warn wash waste watch water wave weak wealth wear web weed week weigh well west whale wheat wheel while white whole wide width wild will wind wine wing wink winter wire wise wish witch woman wonder wood word work world worm worry worth would wound wrap wrist write young youth zebra zone zoom".split(" ");
+
+/* ── CSPRNG ── */
+function randomChar(charset) {
+  const max = Math.floor(256 / charset.length) * charset.length;
+  const buf = new Uint8Array(1);
+  let val;
+  do { crypto.getRandomValues(buf); val = buf[0]; } while (val >= max);
+  return charset[val % charset.length];
+}
+
+function randomInt(maxExclusive) {
+  const max = Math.floor(256 / maxExclusive) * maxExclusive;
+  const buf = new Uint8Array(1);
+  let val;
+  do { crypto.getRandomValues(buf); val = buf[0]; } while (val >= max);
+  return val % maxExclusive;
+}
+
+function randomWord() {
+  // 1028 words needs 2 bytes of unbiased range
+  const range = WORDLIST.length;
+  const buf = new Uint32Array(1);
+  const max = Math.floor(0x100000000 / range) * range;
+  let val;
+  do { crypto.getRandomValues(buf); val = buf[0]; } while (val >= max);
+  return WORDLIST[val % range];
+}
+
+function generateSegment(length, useSymbols) {
+  const ALL = ALL_BASE + (useSymbols ? SYMBOL : "");
+  const mandatory = [
+    randomChar(UPPER), randomChar(LOWER), randomChar(DIGIT),
+    ...(useSymbols ? [randomChar(SYMBOL)] : []),
+  ];
+  const extra = Array.from({ length: Math.max(0, length - mandatory.length) }, () => randomChar(ALL));
+  const chars = [...mandatory, ...extra];
+  const indices = new Uint32Array(chars.length);
+  crypto.getRandomValues(indices);
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = indices[i] % (i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
+}
+
+function generatePassword(segments, segLen, sep, useSymbols) {
+  return Array.from({ length: segments }, () => generateSegment(segLen, useSymbols)).join(sep);
+}
+
+/* ── Passphrase generator ── */
+function capitalize(w) { return w.charAt(0).toUpperCase() + w.slice(1); }
+
+function generatePassphrase(wordCount, sep, capitalize_, includeNumber) {
+  const words = Array.from({ length: wordCount }, () => {
+    const w = randomWord();
+    return capitalize_ ? capitalize(w) : w;
+  });
+  if (includeNumber) {
+    const pos = randomInt(words.length + 1);
+    const num = String(randomInt(90) + 10); // 10-99
+    words.splice(pos, 0, num);
+  }
+  return words.join(sep);
+}
+
+/* ── Entropy & strength ── */
+function calcEntropy(segments, segLen, useSymbols) {
+  const poolSize = ALL_BASE.length + (useSymbols ? SYMBOL.length : 0);
+  return Math.round(segments * segLen * Math.log2(poolSize));
+}
+
+function calcPassphraseEntropy(wordCount, includeNumber) {
+  const bitsPerWord = Math.log2(WORDLIST.length);
+  const numberBits = includeNumber ? Math.log2(90) : 0;
+  return Math.round(wordCount * bitsPerWord + numberBits);
+}
+
+const STRENGTH = [
+  { min: 0,   label: "Rất yếu",   color: "#ef4444" },
+  { min: 40,  label: "Yếu",       color: "#f97316" },
+  { min: 60,  label: "Trung bình",color: "#eab308" },
+  { min: 80,  label: "Mạnh",      color: "#22c55e" },
+  { min: 100, label: "Rất mạnh",  color: "#10b981" },
+];
+
+function getStrength(bits) {
+  return [...STRENGTH].reverse().find(s => bits >= s.min) || STRENGTH[0];
+}
+
+/* ── Separator options ── */
+const SEP_OPTIONS = [
+  { val: "-", label: "- gạch" },
+  { val: ".", label: ". chấm" },
+  { val: "_", label: "_ under" },
+  { val: " ", label: "cách" },
+];
+
+const PASSPHRASE_SEP_OPTIONS = [
+  { val: "-", label: "- gạch" },
+  { val: ".", label: ". chấm" },
+  { val: "_", label: "_ under" },
+  { val: "", label: "liền" },
+];
+
+/* ── Clipboard ── */
+async function copyToClipboard(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;top:-9999px;left:-9999px;opacity:0";
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch { return false; }
+}
+
+/* ── Update range track (webkit + set CSS var for gradient) ── */
+function updateTrack(el) {
+  const pct = ((el.value - el.min) / (el.max - el.min)) * 100;
+  el.style.setProperty("--pct", pct + "%");
+}
+
+/* ── LocalStorage history (max 10) ── */
+const LS_KEY = "pwgen_history";
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; }
+}
+function saveHistory(pw) {
+  const h = loadHistory().filter(x => x !== pw);
+  h.unshift(pw);
+  if (h.length > 10) h.length = 10;
+  try { localStorage.setItem(LS_KEY, JSON.stringify(h)); } catch {}
+}
+
+/* ── SVG icons ── */
+const SpinIcon = () => (
+  <svg className="spin-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+    <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+  </svg>
+);
+const RefreshIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+    <path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+  </svg>
+);
+const CopyIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+  </svg>
+);
+const EyeIcon = ({ open }) => open ? (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>
+  </svg>
+) : (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>
+    <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>
+    <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>
+    <line x1="2" y1="2" x2="22" y2="22"/>
+  </svg>
+);
+const HistoryIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 12a9 9 0 1 0 2.64-6.36L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>
+  </svg>
+);
+const TrashIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+    <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+  </svg>
+);
+const KeyIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/>
+  </svg>
+);
+const WordsIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+  </svg>
+);
+
+/* ── Main component ── */
+const { useState, useCallback, useRef, useEffect, useMemo, memo } = React;
+
+/* ── Memoized password row ── */
+const PasswordRow = memo(function PasswordRow({ pw, index, copied, masked, sep, mode, onCopy }) {
+  function charColor(ch) {
+    if (/[A-Z]/.test(ch)) return "var(--col-upper)";
+    if (/[0-9]/.test(ch)) return "var(--col-digit)";
+    if (SYMBOL.includes(ch)) return "var(--col-symbol)";
+    return "var(--col-lower)";
+  }
+  let rendered;
+  if (mode === "passphrase" && sep === "") {
+    // liền: tô màu xen kẽ theo từ viết hoa
+    rendered = pw.split("").map((ch, ci) => (
+      <span key={ci} style={{ color: charColor(ch) }}>{ch}</span>
+    ));
+  } else {
+    rendered = pw.split(sep || "-").map((seg, si, arr) => (
+      <span key={si}>
+        {si > 0 && <span style={{ color: "var(--sep-color)" }}>{sep}</span>}
+        {seg.split("").map((ch, ci) => (
+          <span key={ci} style={{ color: charColor(ch) }}>{ch}</span>
+        ))}
+      </span>
+    ));
+  }
+  return (
+    <div
+      onClick={() => onCopy(pw, index)}
+      className="pw-row"
+      title="Click để copy"
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        background: copied === index ? "var(--accent-lo)" : "var(--surface-2)",
+        border: "1.5px solid",
+        borderColor: copied === index ? "var(--accent-hi)" : "var(--border)",
+        borderRadius: "var(--radius)",
+        padding: "14px 16px",
+        cursor: "pointer",
+        transition: "background 0.15s, border-color 0.15s",
+        userSelect: "none",
+        WebkitTapHighlightColor: "transparent",
+      }}
+    >
+      <span className={masked ? "masked" : ""} style={{
+        fontFamily: "var(--font-mono)",
+        fontSize: "clamp(12.5px,3.3vw,15px)",
+        letterSpacing: "0.06em",
+        fontWeight: 600,
+        flexShrink: 1,
+        overflowX: "auto",
+        paddingBottom: 2,
+      }}>
+        {rendered}
+      </span>
+      <span style={{
+        fontSize: 11,
+        color: copied === index ? "var(--accent)" : "var(--muted)",
+        letterSpacing: "0.05em",
+        minWidth: 52,
+        textAlign: "right",
+        flexShrink: 0,
+        marginLeft: 8,
+        fontFamily: "var(--font-ui)",
+        fontWeight: copied === index ? 700 : 400,
+        transition: "color 0.15s",
+      }}>
+        {copied === index ? "✓ Copied" : "copy"}
+      </span>
+    </div>
+  );
+});
+
+function PasswordGen() {
+  const [mode,      setMode]      = useState("segment"); // "segment" | "passphrase"
+
+  /* Segment mode config */
+  const [segments,  setSegments]  = useState(4);
+  const [segLen,    setSegLen]    = useState(3);
+  const [sep,       setSep]       = useState("-");
+  const [useSymbols, setUseSymbols] = useState(false);
+
+  /* Passphrase mode config */
+  const [wordCount, setWordCount] = useState(4);
+  const [pfSep,     setPfSep]     = useState("-");
+  const [pfCapitalize, setPfCapitalize] = useState(true);
+  const [pfIncludeNumber, setPfIncludeNumber] = useState(true);
+  const [pfCustomSep, setPfCustomSep] = useState("");
+  const [pfUseCustomSep, setPfUseCustomSep] = useState(false);
+
+  const [passwords, setPasswords] = useState(() =>
+    Array.from({ length: 5 }, () => generatePassword(4, 3, "-", false))
+  );
+  const [copied,    setCopied]    = useState(null);
+  const [spinning,  setSpinning]  = useState(false);
+  const [masked,    setMasked]    = useState(false);
+  const [showHist,  setShowHist]  = useState(false);
+  const [histMasked, setHistMasked] = useState(true);
+  const [history,   setHistory]   = useState(loadHistory);
+  const [theme,     setTheme]     = useState("purple");
+  const [themeAnim, setThemeAnim] = useState(false);
+  const clipTimer   = useRef(null);
+  const firstRender = useRef(true);
+
+  const effectivePfSep = pfUseCustomSep ? pfCustomSep : pfSep;
+
+  const entropy = useMemo(() => {
+    return mode === "segment"
+      ? calcEntropy(segments, segLen, useSymbols)
+      : calcPassphraseEntropy(wordCount, pfIncludeNumber);
+  }, [mode, segments, segLen, useSymbols, wordCount, pfIncludeNumber]);
+  const strength = useMemo(() => getStrength(entropy), [entropy]);
+
+  function genBatch() {
+    return mode === "segment"
+      ? Array.from({ length: 5 }, () => generatePassword(segments, segLen, sep, useSymbols))
+      : Array.from({ length: 5 }, () => generatePassphrase(wordCount, effectivePfSep, pfCapitalize, pfIncludeNumber));
+  }
+
+  /* Sync range track fill on mount */
+  useEffect(() => {
+    document.querySelectorAll("input[type=range]").forEach(updateTrack);
+  }, []);
+
+  /* Auto-generate when config changes (except on first render) */
+  useEffect(() => {
+    if (firstRender.current) { firstRender.current = false; return; }
+    if (spinning) return;
+    setPasswords(genBatch());
+    setCopied(null);
+  }, [mode, segments, segLen, sep, useSymbols, wordCount, pfSep, pfCapitalize, pfIncludeNumber, pfCustomSep, pfUseCustomSep]);
+
+  /* Theme toggle */
+  function toggleTheme() {
+    setThemeAnim(true);
+    setTimeout(() => setThemeAnim(false), 500);
+    const next = theme === "purple" ? "pink" : "purple";
+    setTheme(next);
+    document.documentElement.className = next === "pink" ? "pink" : "";
+  }
+
+  /* Generate */
+  const generate = useCallback(() => {
+    if (spinning) return;
+    setSpinning(true);
+    setTimeout(() => {
+      setPasswords(genBatch());
+      setCopied(null);
+      setSpinning(false);
+    }, 130);
+  }, [mode, segments, segLen, sep, useSymbols, wordCount, effectivePfSep, pfCapitalize, pfIncludeNumber, spinning]);
+
+  /* Copy single */
+  const copy = useCallback(async (pw, idx) => {
+    const ok = await copyToClipboard(pw);
+    if (ok) {
+      setCopied(idx);
+      saveHistory(pw);
+      setHistory(loadHistory());
+      showDiToast("Đã copy! Tự xóa sau 60s", "success", 2200);
+      setTimeout(() => setCopied(c => c === idx ? null : c), 2000);
+      clearTimeout(clipTimer.current);
+      clipTimer.current = setTimeout(() => {
+        copyToClipboard(" ").catch(() => {});
+      }, 60000);
+    } else {
+      showDiToast("Không copy được — chọn thủ công", "error", 2600);
+    }
+  }, []);
+
+  /* Copy all */
+  const copyAll = useCallback(async () => {
+    const all = passwords.join("\n");
+    const ok = await copyToClipboard(all);
+    if (ok) {
+      passwords.forEach(saveHistory);
+      setHistory(loadHistory());
+      showDiToast("Đã copy 5 mật khẩu!", "success", 2400);
+      clearTimeout(clipTimer.current);
+      clipTimer.current = setTimeout(() => {
+        copyToClipboard(" ").catch(() => {});
+      }, 60000);
+    } else {
+      showDiToast("Không copy được", "error", 2400);
+    }
+  }, [passwords]);
+
+  /* Range handler */
+  function handleRange(setter) {
+    return (e) => {
+      setter(+e.target.value);
+      updateTrack(e.target);
+    };
+  }
+
+  /* Clear history */
+  function clearHistory() {
+    try { localStorage.removeItem(LS_KEY); } catch {}
+    setHistory([]);
+    showDiToast("Đã xóa lịch sử", "warn", 2200);
+  }
+
+  function switchMode(next) {
+    if (next === mode) return;
+    setMode(next);
+    showDiToast(next === "segment" ? "Chế độ: Segment" : "Chế độ: Passphrase", "info", 1800);
+  }
+
+  const entropyPct = Math.min(100, (entropy / 128) * 100);
+  const rowSep = mode === "segment" ? sep : effectivePfSep;
+
+  return (
+    <>
+      {/* Theme toggle */}
+      <button
+        className={"theme-btn" + (themeAnim ? " animating" : "")}
+        onClick={toggleTheme}
+        title={theme === "purple" ? "Chuyển sang hồng" : "Chuyển sang tím"}
+      >
+        {theme === "purple" ? "🌸" : "💜"}
+      </button>
+
+      <div style={{ width: "100%", maxWidth: 520 }}>
+
+        {/* Header */}
+        <header style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            fontSize: 11, letterSpacing: "0.3em", color: "var(--accent)",
+            textTransform: "uppercase", marginBottom: 10,
+          }}>
+            <span style={{
+              display: "inline-block", width: 6, height: 6,
+              borderRadius: "50%", background: "var(--accent)",
+              boxShadow: "0 0 8px var(--accent)",
+            }} />
+            Password Generator
+          </div>
+          <h1 style={{
+            fontSize: "clamp(22px,6vw,28px)",
+            fontWeight: 800, color: "var(--text)",
+            letterSpacing: "-0.02em", fontFamily: "var(--font-ui)", lineHeight: 1.2,
+          }}>
+            Tạo mật khẩu ngẫu nhiên
+          </h1>
+          <p style={{ marginTop: 8, color: "var(--text-sub)", fontSize: 13, lineHeight: 1.5 }}>
+            CSPRNG · Không ký tự nhầm lẫn
+          </p>
+        </header>
+
+        {/* Mode tabs */}
+        <div className="mode-tabs">
+          <button
+            className={"mode-tab" + (mode === "segment" ? " active" : "")}
+            onClick={() => switchMode("segment")}
+          >
+            <KeyIcon /> Segment
+          </button>
+          <button
+            className={"mode-tab" + (mode === "passphrase" ? " active" : "")}
+            onClick={() => switchMode("passphrase")}
+          >
+            <WordsIcon /> Passphrase
+          </button>
+        </div>
+
+        {/* Config card */}
+        <div className="card" style={{ marginBottom: 12 }}>
+          {mode === "segment" ? (
+            <>
+              {/* Sliders */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 18 }}>
+                {[
+                  { label: "Số segment",     value: segments, setter: setSegments, min: 2, max: 10 },
+                  { label: "Độ dài segment", value: segLen,   setter: setSegLen,   min: 3, max: 12 },
+                ].map(({ label, value, setter, min, max }) => (
+                  <div key={label} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <span style={{ fontSize: 11, color: "var(--muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                      {label}
+                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <input
+                        type="range" min={min} max={max} value={value}
+                        onChange={handleRange(setter)}
+                        style={{ flex: 1 }}
+                      />
+                      <span style={{
+                        color: "var(--accent)", fontSize: 20, fontWeight: 700,
+                        minWidth: 22, textAlign: "right", fontFamily: "var(--font-mono)",
+                      }}>{value}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Separator */}
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 11, color: "var(--muted)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>
+                  Dấu phân cách
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {SEP_OPTIONS.map(o => (
+                    <button
+                      key={o.val}
+                      onClick={() => setSep(o.val)}
+                      className={"sep-btn" + (sep === o.val ? " active" : "")}
+                    >{o.label}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Symbols toggle */}
+              <div style={{ marginBottom: 18, display: "flex", alignItems: "center", gap: 10 }}>
+                <label style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  cursor: "pointer", userSelect: "none",
+                }}>
+                  <div
+                    onClick={() => setUseSymbols(s => !s)}
+                    style={{
+                      width: 38, height: 22, borderRadius: 11,
+                      background: useSymbols ? "var(--accent)" : "var(--track-bg)",
+                      position: "relative", cursor: "pointer",
+                      transition: "background 0.2s",
+                      flexShrink: 0,
+                      border: "1.5px solid",
+                      borderColor: useSymbols ? "var(--accent)" : "var(--border)",
+                    }}
+                  >
+                    <div style={{
+                      width: 16, height: 16, borderRadius: "50%",
+                      background: "#fff",
+                      position: "absolute",
+                      top: 1, left: useSymbols ? 18 : 1,
+                      transition: "left 0.2s",
+                      boxShadow: "0 1px 4px rgba(0,0,0,0.18)",
+                    }} />
+                  </div>
+                  <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                    Ký tự đặc biệt
+                  </span>
+                  <span style={{
+                    fontSize: 11, color: "var(--col-symbol)",
+                    fontFamily: "var(--font-mono)", letterSpacing: "0.05em",
+                    opacity: useSymbols ? 1 : 0.4,
+                    transition: "opacity 0.2s",
+                  }}>
+                    @#$%^&*!?~+-=
+                  </span>
+                </label>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Word count slider */}
+              <div style={{ marginBottom: 18 }}>
+                <span style={{ fontSize: 11, color: "var(--muted)", letterSpacing: "0.1em", textTransform: "uppercase" }}>
+                  Số từ
+                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+                  <input
+                    type="range" min={2} max={8} value={wordCount}
+                    onChange={handleRange(setWordCount)}
+                    style={{ flex: 1 }}
+                  />
+                  <span style={{
+                    color: "var(--accent)", fontSize: 20, fontWeight: 700,
+                    minWidth: 22, textAlign: "right", fontFamily: "var(--font-mono)",
+                  }}>{wordCount}</span>
+                </div>
+              </div>
+
+              {/* Separator */}
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 11, color: "var(--muted)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 8 }}>
+                  Dấu nối giữa các từ
+                </div>
+                <div style={{ display: "flex", gap: 6, marginBottom: pfUseCustomSep ? 10 : 0 }}>
+                  {PASSPHRASE_SEP_OPTIONS.map(o => (
+                    <button
+                      key={o.val}
+                      onClick={() => { setPfSep(o.val); setPfUseCustomSep(false); }}
+                      className={"sep-btn" + (!pfUseCustomSep && pfSep === o.val ? " active" : "")}
+                    >{o.label}</button>
+                  ))}
+                  <button
+                    onClick={() => setPfUseCustomSep(true)}
+                    className={"sep-btn" + (pfUseCustomSep ? " active" : "")}
+                  >tùy chỉnh</button>
+                </div>
+                {pfUseCustomSep && (
+                  <input
+                    type="text"
+                    className="custom-sep-input"
+                    placeholder="Nhập dấu nối, vd: * hoặc ==="
+                    value={pfCustomSep}
+                    maxLength={5}
+                    onChange={(e) => setPfCustomSep(e.target.value)}
+                  />
+                )}
+              </div>
+
+              {/* Capitalize + number toggles */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 6 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
+                  <div
+                    onClick={() => setPfCapitalize(v => !v)}
+                    style={{
+                      width: 38, height: 22, borderRadius: 11,
+                      background: pfCapitalize ? "var(--accent)" : "var(--track-bg)",
+                      position: "relative", cursor: "pointer", transition: "background 0.2s",
+                      flexShrink: 0, border: "1.5px solid",
+                      borderColor: pfCapitalize ? "var(--accent)" : "var(--border)",
+                    }}
+                  >
+                    <div style={{
+                      width: 16, height: 16, borderRadius: "50%", background: "#fff",
+                      position: "absolute", top: 1, left: pfCapitalize ? 18 : 1,
+                      transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.18)",
+                    }} />
+                  </div>
+                  <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                    Viết Hoa Chữ Đầu
+                  </span>
+                </label>
+
+                <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
+                  <div
+                    onClick={() => setPfIncludeNumber(v => !v)}
+                    style={{
+                      width: 38, height: 22, borderRadius: 11,
+                      background: pfIncludeNumber ? "var(--accent)" : "var(--track-bg)",
+                      position: "relative", cursor: "pointer", transition: "background 0.2s",
+                      flexShrink: 0, border: "1.5px solid",
+                      borderColor: pfIncludeNumber ? "var(--accent)" : "var(--border)",
+                    }}
+                  >
+                    <div style={{
+                      width: 16, height: 16, borderRadius: "50%", background: "#fff",
+                      position: "absolute", top: 1, left: pfIncludeNumber ? 18 : 1,
+                      transition: "left 0.2s", boxShadow: "0 1px 4px rgba(0,0,0,0.18)",
+                    }} />
+                  </div>
+                  <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                    Chèn số ngẫu nhiên (10-99)
+                  </span>
+                </label>
+              </div>
+            </>
+          )}
+
+          {/* Entropy meter */}
+          <div style={{ marginTop: 4 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                Độ bảo mật
+              </span>
+              <span style={{ fontSize: 12, color: strength.color, fontWeight: 700, fontFamily: "var(--font-mono)" }}>
+                {entropy} bits · {strength.label}
+              </span>
+            </div>
+            <div style={{ height: 6, background: "var(--track-bg)", borderRadius: 3, overflow: "hidden" }}>
+              <div style={{
+                height: "100%", borderRadius: 3,
+                width: entropyPct + "%",
+                background: strength.color,
+                transition: "width 0.35s cubic-bezier(.4,0,.2,1), background 0.35s ease",
+              }} />
+            </div>
+          </div>
+        </div>
+
+        {/* Toolbar: eye + copy all */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          <button
+            className="copy-all-btn"
+            onClick={() => setMasked(m => !m)}
+            style={{ flex: "0 0 auto", width: 44, padding: "10px 0" }}
+            title={masked ? "Hiện mật khẩu" : "Ẩn mật khẩu"}
+          >
+            <EyeIcon open={!masked} />
+          </button>
+          <button className="copy-all-btn" onClick={copyAll}>
+            <CopyIcon />
+            Copy tất cả 5 mật khẩu
+          </button>
+        </div>
+
+        {/* Password list */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+          {passwords.map((pw, i) => (
+            <PasswordRow
+              key={i}
+              pw={pw}
+              index={i}
+              copied={copied}
+              masked={masked}
+              sep={rowSep}
+              mode={mode}
+              onCopy={copy}
+            />
+          ))}
+        </div>
+
+        {/* Generate button */}
+        <button onClick={generate} disabled={spinning} className="gen-btn" style={{ marginBottom: 10 }}>
+          {spinning ? <SpinIcon /> : <RefreshIcon />}
+          {spinning ? "Đang tạo..." : "Tạo mật khẩu mới"}
+        </button>
+
+        {/* History toggle */}
+        <button
+          className="copy-all-btn"
+          onClick={() => setShowHist(h => !h)}
+          style={{ marginBottom: 14 }}
+        >
+          <HistoryIcon />
+          {showHist ? "Ẩn lịch sử" : `Lịch sử mật khẩu (${history.length})`}
+        </button>
+
+        {/* History list */}
+        {showHist && history.length > 0 && (
+          <div className="card" style={{ marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <span style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                Gần đây · click để copy lại
+              </span>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <button
+                  onClick={clearHistory}
+                  style={{
+                    background: "none", border: "none", cursor: "pointer",
+                    color: "var(--muted)", padding: "2px 4px", display: "flex", alignItems: "center", gap: 4,
+                    borderRadius: 6, transition: "color 0.15s", fontSize: 11, fontFamily: "var(--font-ui)",
+                  }}
+                  title="Xóa toàn bộ lịch sử"
+                >
+                  <TrashIcon /> Xóa
+                </button>
+                <button
+                  onClick={() => setHistMasked(m => !m)}
+                  style={{
+                    background: "none", border: "none", cursor: "pointer",
+                    color: "var(--muted)", padding: "2px 4px", display: "flex", alignItems: "center",
+                    borderRadius: 6, transition: "color 0.15s",
+                  }}
+                  title={histMasked ? "Hiện lịch sử" : "Ẩn lịch sử"}
+                >
+                  <EyeIcon open={!histMasked} />
+                </button>
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {history.map((pw, i) => (
+                <div key={i} className="history-item" onClick={() => { copy(pw, -1); }}>
+                  <span className={histMasked ? "masked" : ""} style={{ overflow: "hidden", textOverflow: histMasked ? "clip" : "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: 12 }}>{pw}</span>
+                  <CopyIcon />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {showHist && history.length === 0 && (
+          <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, marginBottom: 14 }}>
+            Chưa có mật khẩu nào trong lịch sử
+          </div>
+        )}
+
+        {/* Legend */}
+        {mode === "segment" && (
+          <p style={{
+            textAlign: "center", marginTop: 4,
+            fontSize: 11, color: "var(--muted)",
+            fontFamily: "var(--font-ui)", letterSpacing: "0.02em",
+          }}>
+            <span style={{ color: "var(--col-upper)" }}>■</span> Chữ hoa &nbsp;
+            <span style={{ color: "var(--col-digit)" }}>■</span> Số &nbsp;
+            <span style={{ color: "var(--col-lower)" }}>■</span> Chữ thường &nbsp;
+            {useSymbols && <><span style={{ color: "var(--col-symbol)" }}>■</span> Ký tự đặc biệt</>}
+          </p>
+        )}
+        {mode === "passphrase" && (
+          <p style={{
+            textAlign: "center", marginTop: 4,
+            fontSize: 11, color: "var(--muted)",
+            fontFamily: "var(--font-ui)", letterSpacing: "0.02em",
+          }}>
+            Wordlist tiếng Anh · {WORDLIST.length} từ · kiểu EFF
+          </p>
+        )}
+      </div>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<PasswordGen />);
+</script>
+</body>
+</html>

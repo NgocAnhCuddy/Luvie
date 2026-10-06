@@ -1,0 +1,53 @@
+/* ══════════════════════════════════════
+   Learnsy — Skeleton & Ripple styles
+   index/CSS/skeleton.css
+══════════════════════════════════════ */
+
+/* ── Skeleton shimmer ── */
+@keyframes skeletonMove {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+.skeleton {
+  border-radius: 12px;
+  background: linear-gradient(
+    90deg,
+    rgba(245, 213, 232, 0.55) 25%,
+    rgba(255, 230, 242, 0.90) 50%,
+    rgba(245, 213, 232, 0.55) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeletonMove 1.5s ease-in-out infinite;
+}
+
+body.dark .skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(66, 21, 38, 0.70) 25%,
+    rgba(90, 28, 52, 0.90) 50%,
+    rgba(66, 21, 38, 0.70) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeletonMove 1.5s ease-in-out infinite;
+}
+
+/* ── Ripple ── */
+@keyframes rippleAnim {
+  0%   { transform: scale(0);   opacity: 0.45; }
+  100% { transform: scale(4.5); opacity: 0;    }
+}
+
+.ripple-host {
+  position: relative;
+  overflow: hidden;
+}
+
+.ripple-circle {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+  pointer-events: none;
+  animation: rippleAnim 0.55s ease-out both;
+  transform-origin: center;
+}

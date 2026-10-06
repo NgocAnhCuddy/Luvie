@@ -1,0 +1,26 @@
+/* ── Learnsy Admin — Responsive Styles ── */
+/* Tách từ app.js (learnsy-responsive-css)  */
+
+.ls-container {
+  width: 100%;
+  max-width: min(760px, 100%);
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.ls-page-pad {
+  padding-left: clamp(10px, 3vw, 28px);
+  padding-right: clamp(10px, 3vw, 28px);
+}
+
+.ls-content-pad {
+  padding: clamp(12px, 3vw, 24px) clamp(10px, 3vw, 24px) 100px;
+}
+
+@media (min-width: 600px) {
+  .ls-container { max-width: min(760px, 92vw); }
+}
+
+@media (min-width: 900px) {
+  .ls-container { max-width: 760px; }
+}
