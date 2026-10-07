@@ -1201,7 +1201,24 @@ import React from 'react';
       });
     }
 
-    function VocabModePicker({ unit, LC, mastered, onPick }) {
+    // ★ Word form khi Gõ từ: lấy các form của gia đình từ có base_word trùng với từ đang hỏi
+    function vpFamilyFormsFor(unit, w) {
+      const key = (w.word || '').trim().toLowerCase();
+      if (!key) return [];
+      const fam = (unit.wordFamilies || []).find(f => (f.base_word || '').trim().toLowerCase() === key);
+      if (!fam) return [];
+      const seen = new Set([key]);
+      return (fam.forms || []).filter(f => {
+        const k = (f.form || '').trim().toLowerCase();
+        if (!k || seen.has(k)) return false;
+        seen.add(k); return true;
+      });
+    }
+    function vpHasAnyWordForm(unit) {
+      return vpValidWords(unit).some(w => vpFamilyFormsFor(unit, w).length > 0);
+    }
+
+    function VocabModePicker({ unit, LC, mastered, onPick, wordFormMode, onToggleWordForm }) {
       const words = vpValidWords(unit);
       const modes = [
         { mode: 'flashcard', title: 'Flashcard', desc: 'Lật thẻ xem nghĩa, rồi kiểm tra viết từ', color: '#A855F7', icon: <IconBook size={21} color="#A855F7" /> },
@@ -1217,6 +1234,22 @@ import React from 'react';
           <div style={{ fontSize: 12.5, fontWeight: 700, color: LC.textMid, marginBottom: 10 }}>
             {total} từ{mastered > 0 ? ` · Đã thuộc ${mastered}/${total}` : ''} · Chọn cách học bạn thấy dễ nhất
           </div>
+          {vpHasAnyWordForm(unit) && (
+            <button onClick={onToggleWordForm} style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', textAlign: 'left',
+              padding: '12px 14px', borderRadius: 18, marginBottom: 10, cursor: 'pointer', fontFamily: 'inherit',
+              background: wordFormMode ? 'rgba(245,158,11,0.12)' : LC.inputBg,
+              border: `1.5px solid ${wordFormMode ? '#F59E0B' : LC.border}`,
+            }}>
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 900, color: LC.text }}>Điền cả Word Form khi Gõ từ</div>
+                <div style={{ fontSize: 11, color: LC.textMid, marginTop: 2 }}>Bật: gõ thêm các dạng từ (n, v, adj, adv...) của từ đó</div>
+              </div>
+              <span style={{ width: 42, height: 24, borderRadius: 999, background: wordFormMode ? '#F59E0B' : LC.border, position: 'relative', flexShrink: 0, marginLeft: 10 }}>
+                <span style={{ position: 'absolute', top: 3, left: wordFormMode ? 21 : 3, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left .18s cubic-bezier(.34,1.56,.64,1)' }} />
+              </span>
+            </button>
+          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {modes.map((m, i) => {
               const disabled = m.mode !== 'flashcard' && words.length < 2;
@@ -1340,16 +1373,20 @@ import React from 'react';
       );
     }
 
-    function VocabTypingMode({ unit, LC, onDone }) {
+    function VocabTypingMode({ unit, LC, wordFormMode, onDone }) {
       const words = useMemo(() => shuffleArr(vpValidWords(unit)), [unit.id]);
       const total = words.length;
       const [idx, setIdx] = useState(0);
       const [input, setInput] = useState('');
       const [checked, setChecked] = useState(false);
       const [ok, setOk] = useState(false);
+      const [wordOk, setWordOk] = useState(false);
+      const [formInputs, setFormInputs] = useState({});
+      const [formOk, setFormOk] = useState({});
       const [correctCount, setCorrectCount] = useState(0);
       const [missed, setMissed] = useState([]);
       const inputRef = useRef(null);
+      const formRefs = useRef({});
 
       useEffect(() => {
         if (total === 0 || idx >= total) onDone(correctCount, total, missed);
@@ -1360,17 +1397,31 @@ import React from 'react';
       if (total === 0 || idx >= total) return null;
       const w = words[idx];
       const hint = (w.word || '').split('').map((c, i) => (c === ' ' ? '\u00A0\u00A0' : i === 0 ? c : '_')).join(' ');
+      // ★ Chỉ có form khi công tắc bật VÀ từ này có gia đình từ
+      const forms = wordFormMode ? vpFamilyFormsFor(unit, w) : [];
+      const matches = (inp, ans) => {
+        const a = (inp || '').trim().toLowerCase(), b = (ans || '').trim().toLowerCase();
+        return !!a && (a === b || (b.length > 3 && levenshtein(a, b) <= 1));
+      };
 
       function handleCheck() {
         if (checked || !input.trim()) return;
-        const a = input.trim().toLowerCase(), b = (w.word || '').trim().toLowerCase();
-        const good = a === b || (b.length > 3 && levenshtein(a, b) <= 1);
-        setOk(good); setChecked(true);
-        if (good) setCorrectCount(c => c + 1); else setMissed(m => [...m, w]);
+        const good = matches(input, w.word);
+        const fOk = {};
+        forms.forEach(f => { fOk[f.id] = matches(formInputs[f.id], f.form); });
+        const allOk = good && forms.every(f => fOk[f.id]);
+        setWordOk(good); setFormOk(fOk); setOk(allOk); setChecked(true);
+        if (allOk) setCorrectCount(c => c + 1); else setMissed(m => [...m, w]);
         speak(w.word, 1);
       }
+      function focusNextField(i) {
+        // i = -1: ô từ chính; i >= 0: ô form thứ i
+        if (i + 1 < forms.length) formRefs.current[forms[i + 1].id]?.focus();
+        else handleCheck();
+      }
       function handleNext() {
-        setIdx(i => i + 1); setInput(''); setChecked(false); setOk(false);
+        setIdx(i => i + 1); setInput(''); setChecked(false); setOk(false); setWordOk(false);
+        setFormInputs({}); setFormOk({}); formRefs.current = {};
       }
 
       return (
@@ -1384,7 +1435,13 @@ import React from 'react';
             {w.pos && <div style={{ fontSize: 11.5, color: '#B07CF0', fontWeight: 700 }}>{getPosLabel(w.pos)}</div>}
             <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: 2, color: LC.textMid, margin: '4px 0 6px' }}>{hint}</div>
             <IvFillInField label="Từ tiếng Anh" value={input} onChange={setInput} disabled={checked}
-              checked={checked} isCorrect={ok} correctAnswer={w.word} LC={LC} inputRef={inputRef} onEnter={handleCheck} />
+              checked={checked} isCorrect={wordOk} correctAnswer={w.word} LC={LC} inputRef={inputRef} onEnter={() => focusNextField(-1)} />
+            {forms.map((f, fi) => (
+              <IvFillInField key={f.id} label={`Word form · ${getPosLabel(f.pos)}${f.meaning ? ' — ' + f.meaning : ''}`}
+                value={formInputs[f.id] || ''} onChange={v => setFormInputs(p => ({ ...p, [f.id]: v }))} disabled={checked}
+                checked={checked} isCorrect={!!formOk[f.id]} correctAnswer={f.form} LC={LC}
+                inputRef={el => { if (el) formRefs.current[f.id] = el; }} onEnter={() => focusNextField(fi)} />
+            ))}
             <div style={{ marginTop: 10 }}>
               {!checked ? (
                 <IvBigButton text="Kiểm tra" icon={<IconCheck size={14} color="#fff" />} onClick={handleCheck} />
@@ -1524,7 +1581,7 @@ import React from 'react';
       );
     }
 
-    function VocabPlayHost({ mode, unit, LC, onFinish, onExit }) {
+    function VocabPlayHost({ mode, unit, LC, wordFormMode, onFinish, onExit }) {
       const [result, setResult] = useState(null);
       const [runKey, setRunKey] = useState(0);
       if (result) {
@@ -1535,7 +1592,7 @@ import React from 'react';
         onFinish(correct, total);
         setResult({ correct, total, missed: missed || [] });
       }
-      if (mode === 'typing') return <VocabTypingMode key={runKey} unit={unit} LC={LC} onDone={handleDone} />;
+      if (mode === 'typing') return <VocabTypingMode key={runKey} unit={unit} LC={LC} wordFormMode={wordFormMode} onDone={handleDone} />;
       if (mode === 'matching') return <VocabMatchingMode key={runKey} unit={unit} LC={LC} onDone={handleDone} />;
       return <VocabQuizMode key={runKey} unit={unit} LC={LC} kind={mode} onDone={handleDone} />;
     }
@@ -1567,6 +1624,17 @@ import React from 'react';
       const [ivActiveSet, setIvActiveSet] = useState(null);
       const [ivActiveMode, setIvActiveMode] = useState(null);
       const [ivHideMeaningMode, setIvHideMeaningMode] = useState(false);
+      // ★ Công tắc "Điền cả Word Form khi Gõ từ" (lưu cục bộ, mặc định TẮT)
+      const [vpWordFormMode, setVpWordFormMode] = useState(() => {
+        try { return localStorage.getItem('vp_wordform_mode') === '1'; } catch (e) { return false; }
+      });
+      function vpToggleWordForm() {
+        setVpWordFormMode(prev => {
+          const next = !prev;
+          try { localStorage.setItem('vp_wordform_mode', next ? '1' : '0'); } catch (e) { /* bỏ qua */ }
+          return next;
+        });
+      }
 
       const LC = useMemo(() => ({
         text: dark ? '#F2EAFF' : '#2D1245',
@@ -1823,11 +1891,12 @@ import React from 'react';
               ) : !unitMode ? (
                 <VocabModePicker unit={activeUnit} LC={LC}
                   mastered={masteryOf(activeUnit.id, (activeUnit.vocab || []).length)}
+                  wordFormMode={vpWordFormMode} onToggleWordForm={vpToggleWordForm}
                   onPick={setUnitMode} />
               ) : unitMode === 'flashcard' ? (
                 <LearningView unit={activeUnit} LC={LC} dark={dark} onExit={() => setUnitMode(null)} onProgressSaved={saveProgress} />
               ) : (
-                <VocabPlayHost mode={unitMode} unit={activeUnit} LC={LC}
+                <VocabPlayHost mode={unitMode} unit={activeUnit} LC={LC} wordFormMode={vpWordFormMode}
                   onFinish={(correct, total) => {
                     if (correct > masteryOf(activeUnit.id, total)) saveProgress(activeUnit, correct);
                   }}
