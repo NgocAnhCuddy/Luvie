@@ -1205,17 +1205,21 @@ import React from 'react';
     function vpFamilyFormsFor(unit, w) {
       const key = (w.word || '').trim().toLowerCase();
       if (!key) return [];
-      const fam = (unit.wordFamilies || []).find(f => (f.base_word || '').trim().toLowerCase() === key);
+      // Khớp nếu từ đang hỏi là base_word HOẶC là 1 trong các form của gia đình
+      const fam = (unit.wordFamilies || []).find(f =>
+        (f.base_word || '').trim().toLowerCase() === key ||
+        (f.forms || []).some(x => (x.form || '').trim().toLowerCase() === key));
       if (!fam) return [];
       const seen = new Set([key]);
-      return (fam.forms || []).filter(f => {
+      const all = [
+        ...(fam.base_word ? [{ id: 'base-' + fam.id, form: fam.base_word, pos: fam.pos, meaning: '' }] : []),
+        ...(fam.forms || []),
+      ];
+      return all.filter(f => {
         const k = (f.form || '').trim().toLowerCase();
         if (!k || seen.has(k)) return false;
         seen.add(k); return true;
       });
-    }
-    function vpHasAnyWordForm(unit) {
-      return vpValidWords(unit).some(w => vpFamilyFormsFor(unit, w).length > 0);
     }
 
     function VocabModePicker({ unit, LC, mastered, onPick, wordFormMode, onToggleWordForm }) {
@@ -1234,7 +1238,7 @@ import React from 'react';
           <div style={{ fontSize: 12.5, fontWeight: 700, color: LC.textMid, marginBottom: 10 }}>
             {total} từ{mastered > 0 ? ` · Đã thuộc ${mastered}/${total}` : ''} · Chọn cách học bạn thấy dễ nhất
           </div>
-          {vpHasAnyWordForm(unit) && (
+          {(unit.wordFamilies || []).length > 0 && (
             <button onClick={onToggleWordForm} style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', textAlign: 'left',
               padding: '12px 14px', borderRadius: 18, marginBottom: 10, cursor: 'pointer', fontFamily: 'inherit',
