@@ -28,8 +28,19 @@ import React from 'react';
       pronoun: 'Đại từ (pron)', pron: 'Đại từ (pron)',
       interjection: 'Thán từ (intj)', intj: 'Thán từ (intj)',
       phrase: 'Cụm từ',
+      'phrasal verb': 'Cụm động từ (phr V)', 'phrasal_verb': 'Cụm động từ (phr V)',
+      'phr v': 'Cụm động từ (phr V)', 'phr.v': 'Cụm động từ (phr V)', 'phr_v': 'Cụm động từ (phr V)', phrv: 'Cụm động từ (phr V)',
     };
-    const getPosLabel = pos => POS_LABELS[pos] || pos || 'Từ vựng';
+    const getPosLabel = pos => {
+      const k = String(pos || '').trim().toLowerCase();
+      return POS_LABELS[k] || pos || 'Từ vựng';
+    };
+    // Thứ tự hiển thị ô Word Form: N → V → phr V → Adj → Adv → còn lại
+    const POS_ORDER = ['n', 'noun', 'v', 'verb', 'phr v', 'phr.v', 'phr_v', 'phrv', 'phrasal verb', 'phrasal_verb', 'adj', 'adjective', 'adv', 'adverb'];
+    const posRank = pos => {
+      const i = POS_ORDER.indexOf(String(pos || '').trim().toLowerCase());
+      return i === -1 ? 99 : (i < 2 ? 0 : i < 4 ? 1 : i < 10 ? 2 : i < 12 ? 3 : 4);
+    };
 
     function levenshtein(a, b) {
       if (!a || !b) return Math.max((a || '').length, (b || '').length);
@@ -1219,7 +1230,7 @@ import React from 'react';
         const k = (f.form || '').trim().toLowerCase();
         if (!k || seen.has(k)) return false;
         seen.add(k); return true;
-      });
+      }).map((f, i) => ({ f, i })).sort((a, b) => (posRank(a.f.pos) - posRank(b.f.pos)) || (a.i - b.i)).map(x => x.f);
     }
 
     function VocabModePicker({ unit, LC, mastered, onPick, wordFormMode, onToggleWordForm }) {
@@ -1238,7 +1249,7 @@ import React from 'react';
           <div style={{ fontSize: 12.5, fontWeight: 700, color: LC.textMid, marginBottom: 10 }}>
             {total} từ{mastered > 0 ? ` · Đã thuộc ${mastered}/${total}` : ''} · Chọn cách học bạn thấy dễ nhất
           </div>
-          {(unit.wordFamilies || []).length > 0 && (
+          {(
             <button onClick={onToggleWordForm} style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', textAlign: 'left',
               padding: '12px 14px', borderRadius: 18, marginBottom: 10, cursor: 'pointer', fontFamily: 'inherit',
@@ -1247,7 +1258,7 @@ import React from 'react';
             }}>
               <div>
                 <div style={{ fontSize: 12.5, fontWeight: 900, color: LC.text }}>Điền cả Word Form khi Gõ từ</div>
-                <div style={{ fontSize: 11, color: LC.textMid, marginTop: 2 }}>Bật: gõ thêm các dạng từ (n, v, adj, adv...) của từ đó</div>
+                <div style={{ fontSize: 11, color: LC.textMid, marginTop: 2 }}>{(unit.wordFamilies || []).length > 0 ? 'Bật: gõ thêm các dạng từ (n, v, adj, adv...) của từ đó' : 'Unit này chưa có Gia đình từ nên chưa có ô Word Form nào'}</div>
               </div>
               <span style={{ width: 42, height: 24, borderRadius: 999, background: wordFormMode ? '#F59E0B' : LC.border, position: 'relative', flexShrink: 0, marginLeft: 10 }}>
                 <span style={{ position: 'absolute', top: 3, left: wordFormMode ? 21 : 3, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left .18s cubic-bezier(.34,1.56,.64,1)' }} />
@@ -1377,7 +1388,7 @@ import React from 'react';
       );
     }
 
-    function VocabTypingMode({ unit, LC, wordFormMode, onDone }) {
+    function VocabTypingMode({ unit, LC, wordFormMode, onToggleWordForm, onDone }) {
       const words = useMemo(() => shuffleArr(vpValidWords(unit)), [unit.id]);
       const total = words.length;
       const [idx, setIdx] = useState(0);
@@ -1432,14 +1443,30 @@ import React from 'react';
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
           <IvProgressBar current={idx + 1} total={total} LC={LC} color="#F59E0B" />
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 20px 100px', gap: 12, overflowY: 'auto' }}>
+            {onToggleWordForm && (
+              <button onClick={() => { if (!checked) onToggleWordForm(); }} disabled={checked} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 12px', borderRadius: 999, cursor: checked ? 'default' : 'pointer',
+                fontFamily: 'inherit', fontSize: 11.5, fontWeight: 900, color: wordFormMode ? '#F59E0B' : LC.textMid,
+                background: wordFormMode ? 'rgba(245,158,11,0.12)' : LC.inputBg, border: `1.5px solid ${wordFormMode ? '#F59E0B' : LC.border}`,
+                opacity: checked ? 0.6 : 1,
+              }}>
+                <span style={{ width: 30, height: 17, borderRadius: 999, background: wordFormMode ? '#F59E0B' : LC.border, position: 'relative', flexShrink: 0 }}>
+                  <span style={{ position: 'absolute', top: 2, left: wordFormMode ? 15 : 2, width: 13, height: 13, borderRadius: '50%', background: '#fff', transition: 'left .18s ease' }} />
+                </span>
+                Điền cả Word Form
+              </button>
+            )}
             <div style={{ padding: '6px 14px', borderRadius: 999, background: 'rgba(245,158,11,0.12)' }}>
               <span style={{ fontSize: 11.5, fontWeight: 900, color: '#F59E0B' }}>Gõ từ tiếng Anh có nghĩa này</span>
             </div>
             <div style={{ fontSize: 22, fontWeight: 900, color: LC.text, textAlign: 'center', lineHeight: 1.5, maxWidth: 420 }}>{w.meaning}</div>
             {w.pos && <div style={{ fontSize: 11.5, color: '#B07CF0', fontWeight: 700 }}>{getPosLabel(w.pos)}</div>}
             <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: 2, color: LC.textMid, margin: '4px 0 6px' }}>{hint}</div>
-            <IvFillInField label="Từ tiếng Anh" value={input} onChange={setInput} disabled={checked}
+            <IvFillInField label={wordFormMode ? `Từ tiếng Anh · ${getPosLabel(w.pos)}` : 'Từ tiếng Anh'} value={input} onChange={setInput} disabled={checked}
               checked={checked} isCorrect={wordOk} correctAnswer={w.word} LC={LC} inputRef={inputRef} onEnter={() => focusNextField(-1)} />
+            {wordFormMode && forms.length === 0 && (
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: LC.textMid, textAlign: 'center', maxWidth: 420 }}>Từ này chưa có Word Form trong Gia đình từ của Unit.</div>
+            )}
             {forms.map((f, fi) => (
               <IvFillInField key={f.id} label={`Word form · ${getPosLabel(f.pos)}${f.meaning ? ' — ' + f.meaning : ''}`}
                 value={formInputs[f.id] || ''} onChange={v => setFormInputs(p => ({ ...p, [f.id]: v }))} disabled={checked}
@@ -1585,7 +1612,7 @@ import React from 'react';
       );
     }
 
-    function VocabPlayHost({ mode, unit, LC, wordFormMode, onFinish, onExit }) {
+    function VocabPlayHost({ mode, unit, LC, wordFormMode, onToggleWordForm, onFinish, onExit }) {
       const [result, setResult] = useState(null);
       const [runKey, setRunKey] = useState(0);
       if (result) {
@@ -1596,7 +1623,7 @@ import React from 'react';
         onFinish(correct, total);
         setResult({ correct, total, missed: missed || [] });
       }
-      if (mode === 'typing') return <VocabTypingMode key={runKey} unit={unit} LC={LC} wordFormMode={wordFormMode} onDone={handleDone} />;
+      if (mode === 'typing') return <VocabTypingMode key={runKey} unit={unit} LC={LC} wordFormMode={wordFormMode} onToggleWordForm={onToggleWordForm} onDone={handleDone} />;
       if (mode === 'matching') return <VocabMatchingMode key={runKey} unit={unit} LC={LC} onDone={handleDone} />;
       return <VocabQuizMode key={runKey} unit={unit} LC={LC} kind={mode} onDone={handleDone} />;
     }
@@ -1900,7 +1927,7 @@ import React from 'react';
               ) : unitMode === 'flashcard' ? (
                 <LearningView unit={activeUnit} LC={LC} dark={dark} onExit={() => setUnitMode(null)} onProgressSaved={saveProgress} />
               ) : (
-                <VocabPlayHost mode={unitMode} unit={activeUnit} LC={LC} wordFormMode={vpWordFormMode}
+                <VocabPlayHost mode={unitMode} unit={activeUnit} LC={LC} wordFormMode={vpWordFormMode} onToggleWordForm={vpToggleWordForm}
                   onFinish={(correct, total) => {
                     if (correct > masteryOf(activeUnit.id, total)) saveProgress(activeUnit, correct);
                   }}
