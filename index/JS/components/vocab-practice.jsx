@@ -42,6 +42,28 @@ import React from 'react';
       return i === -1 ? 99 : (i < 2 ? 0 : i < 4 ? 1 : i < 10 ? 2 : i < 12 ? 3 : 4);
     };
 
+    // ★ So khớp Loại từ khi nhập (chấp nhận n / noun / danh từ / danh từ (n)...)
+    const POS_GROUPS = [
+      ['n', 'noun', 'danh từ', 'danh từ n'],
+      ['v', 'verb', 'động từ', 'động từ v'],
+      ['adj', 'adjective', 'tính từ', 'tính từ adj'],
+      ['adv', 'adverb', 'trạng từ', 'trạng từ adv'],
+      ['prep', 'preposition', 'giới từ', 'giới từ prep'],
+      ['conj', 'conjunction', 'liên từ', 'liên từ conj'],
+      ['pron', 'pronoun', 'đại từ', 'đại từ pron'],
+      ['intj', 'interjection', 'thán từ', 'thán từ intj'],
+      ['phrase', 'cụm từ'],
+      ['phr v', 'phrv', 'phrasal verb', 'cụm động từ', 'cụm động từ phr v'],
+    ];
+    const posNorm = x => String(x || '').toLowerCase().replace(/[().,_]/g, ' ').replace(/\s+/g, ' ').trim();
+    const posMatches = (inp, pos) => {
+      const a = posNorm(inp), b = posNorm(pos);
+      if (!a || !b) return false;
+      if (a === b) return true;
+      const g = POS_GROUPS.find(gr => gr.includes(b));
+      return !!g && g.includes(a);
+    };
+
     function levenshtein(a, b) {
       if (!a || !b) return Math.max((a || '').length, (b || '').length);
       const m = a.length, n = b.length;
@@ -1216,6 +1238,15 @@ import React from 'react';
     function vpFamilyFormsFor(unit, w) {
       const key = (w.word || '').trim().toLowerCase();
       if (!key) return [];
+      // ★ Ưu tiên word form nhập thẳng trên từ (cột vocab_words.word_forms: [{pos, form}])
+      let own = w.word_forms;
+      if (typeof own === 'string') { try { own = JSON.parse(own); } catch (e) { own = []; } }
+      if (Array.isArray(own) && own.length) {
+        const seenOwn = new Set([key]);
+        return own.map((x, i) => ({ id: 'wf-' + (w.id || key) + '-' + i, form: (x && x.form) || '', pos: x && x.pos, meaning: (x && x.meaning) || '' }))
+          .filter(f => { const k = f.form.trim().toLowerCase(); if (!k || seenOwn.has(k)) return false; seenOwn.add(k); return true; })
+          .map((f, i) => ({ f, i })).sort((a, b) => (posRank(a.f.pos) - posRank(b.f.pos)) || (a.i - b.i)).map(x => x.f);
+      }
       // Khớp nếu từ đang hỏi là base_word HOẶC là 1 trong các form của gia đình
       const fam = (unit.wordFamilies || []).find(f =>
         (f.base_word || '').trim().toLowerCase() === key ||
@@ -1398,9 +1429,12 @@ import React from 'react';
       const [wordOk, setWordOk] = useState(false);
       const [formInputs, setFormInputs] = useState({});
       const [formOk, setFormOk] = useState({});
+      const [posInput, setPosInput] = useState('');
+      const [posOk, setPosOk] = useState(false);
       const [correctCount, setCorrectCount] = useState(0);
       const [missed, setMissed] = useState([]);
       const inputRef = useRef(null);
+      const posRef = useRef(null);
       const formRefs = useRef({});
 
       useEffect(() => {
@@ -1414,6 +1448,8 @@ import React from 'react';
       const hint = (w.word || '').split('').map((c, i) => (c === ' ' ? '\u00A0\u00A0' : i === 0 ? c : '_')).join(' ');
       // ★ Chỉ có form khi công tắc bật VÀ từ này có gia đình từ
       const forms = wordFormMode ? vpFamilyFormsFor(unit, w) : [];
+      // ★ Bật Word Form + từ có loại từ → phải điền thêm Loại từ
+      const needPos = wordFormMode && !!w.pos;
       const matches = (inp, ans) => {
         const a = (inp || '').trim().toLowerCase(), b = (ans || '').trim().toLowerCase();
         return !!a && (a === b || (b.length > 3 && levenshtein(a, b) <= 1));
@@ -1424,19 +1460,22 @@ import React from 'react';
         const good = matches(input, w.word);
         const fOk = {};
         forms.forEach(f => { fOk[f.id] = matches(formInputs[f.id], f.form); });
-        const allOk = good && forms.every(f => fOk[f.id]);
-        setWordOk(good); setFormOk(fOk); setOk(allOk); setChecked(true);
+        const pOk = !needPos || posMatches(posInput, w.pos);
+        const allOk = good && pOk && forms.every(f => fOk[f.id]);
+        setWordOk(good); setPosOk(pOk); setFormOk(fOk); setOk(allOk); setChecked(true);
         if (allOk) setCorrectCount(c => c + 1); else setMissed(m => [...m, w]);
         speak(w.word, 1);
       }
       function focusNextField(i) {
-        // i = -1: ô từ chính; i >= 0: ô form thứ i
+        // i = -2: ô từ chính; i = -1: ô loại từ; i >= 0: ô form thứ i
+        if (i === -2 && needPos) { posRef.current?.focus(); return; }
+        if (i === -2) i = -1;
         if (i + 1 < forms.length) formRefs.current[forms[i + 1].id]?.focus();
         else handleCheck();
       }
       function handleNext() {
         setIdx(i => i + 1); setInput(''); setChecked(false); setOk(false); setWordOk(false);
-        setFormInputs({}); setFormOk({}); formRefs.current = {};
+        setFormInputs({}); setFormOk({}); setPosInput(''); setPosOk(false); formRefs.current = {};
       }
 
       return (
@@ -1460,10 +1499,14 @@ import React from 'react';
               <span style={{ fontSize: 11.5, fontWeight: 900, color: '#F59E0B' }}>Gõ từ tiếng Anh có nghĩa này</span>
             </div>
             <div style={{ fontSize: 22, fontWeight: 900, color: LC.text, textAlign: 'center', lineHeight: 1.5, maxWidth: 420 }}>{w.meaning}</div>
-            {w.pos && <div style={{ fontSize: 11.5, color: '#B07CF0', fontWeight: 700 }}>{getPosLabel(w.pos)}</div>}
+            {w.pos && (!wordFormMode || checked) && <div style={{ fontSize: 11.5, color: '#B07CF0', fontWeight: 700 }}>{getPosLabel(w.pos)}</div>}
             <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: 2, color: LC.textMid, margin: '4px 0 6px' }}>{hint}</div>
-            <IvFillInField label={wordFormMode ? `Từ tiếng Anh · ${getPosLabel(w.pos)}` : 'Từ tiếng Anh'} value={input} onChange={setInput} disabled={checked}
-              checked={checked} isCorrect={wordOk} correctAnswer={w.word} LC={LC} inputRef={inputRef} onEnter={() => focusNextField(-1)} />
+            <IvFillInField label="Từ tiếng Anh" value={input} onChange={setInput} disabled={checked}
+              checked={checked} isCorrect={wordOk} correctAnswer={w.word} LC={LC} inputRef={inputRef} onEnter={() => focusNextField(-2)} />
+            {needPos && (
+              <IvFillInField label="Loại từ (n, v, adj, adv...)" value={posInput} onChange={setPosInput} disabled={checked}
+                checked={checked} isCorrect={posOk} correctAnswer={getPosLabel(w.pos)} LC={LC} inputRef={posRef} onEnter={() => focusNextField(-1)} />
+            )}
             {wordFormMode && forms.length === 0 && (
               <div style={{ fontSize: 11.5, fontWeight: 700, color: LC.textMid, textAlign: 'center', maxWidth: 420 }}>Từ này chưa có Word Form trong Gia đình từ của Unit.</div>
             )}
