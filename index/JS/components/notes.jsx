@@ -6,12 +6,15 @@
    • Tự lưu khi gõ (trễ ~0,4 giây), lưu trên thiết bị này theo TỪNG học sinh
      (localStorage 'lsnotes_v1_<id học sinh>'). Không cần mạng, không đổi database.
    • Trong lúc làm bài có nút "Ghi nhanh": mở đúng tờ note của bài đó (tự tạo nếu chưa có).
+   • Hộp công cụ trong tờ note: hoàn tác/làm lại, đánh số (1. 1) 1/), gạch đầu dòng, checklist ☐/☑,
+     sắp xếp A→Z, đánh số lại, chép cả tờ. Bấm Enter ở dòng "1. abc" → dòng mới tự thành "2. "
+     (cũng nối tiếp • và ☐; Enter ở dòng trống để thoát danh sách). Tắt/bật bằng nút "Tự đánh số".
 
    Dùng:
      window.NotesScreen  — màn hình đầy đủ (app.jsx: homeTab === 'notes')
      window.NotesQuick   — hộp ghi nhanh nổi (quiz-player.jsx)
    ════════════════════════════════════════════════════════════════════════ */
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 
 /* ── 6 màu giấy ── */
@@ -102,6 +105,222 @@ const fmtDate = (t) => {
   } catch { return ''; }
 };
 
+/*LIST-HELPERS-START*/
+/* ══ Danh sách tự đánh số (hàm thuần – dễ test) ═════════════════════════
+   Nhận diện đầu dòng: "1. " "1) " "1/ " (số), "• " hoặc "- " (gạch đầu dòng), "☐ " "☑ " (việc cần làm). */
+const NUM_FORMATS = ['.', ')', '/'];
+const RE_NUM = /^(\s*)(\d{1,3})([.)\/])(\s+)(.*)$/;
+const RE_BUL = /^(\s*)([•\-–])(\s+)(.*)$/;
+const RE_CHK = /^(\s*)([☐☑])(\s*)(.*)$/;
+
+function parseLine(line) {
+  let m = RE_NUM.exec(line);
+  if (m) return { kind: 'num', indent: m[1], n: parseInt(m[2], 10), delim: m[3], rest: m[5] };
+  m = RE_BUL.exec(line);
+  if (m) return { kind: 'bul', indent: m[1], marker: m[2], rest: m[4] };
+  m = RE_CHK.exec(line);
+  if (m) return { kind: 'chk', indent: m[1], marker: m[2], rest: m[4] };
+  return null;
+}
+
+const lineIndent = (l) => (/^\s*/.exec(l) || [''])[0];
+
+/** [đầu, cuối) của các dòng chứa vùng chọn s..e. */
+function lineBounds(body, s, e) {
+  const a = s === 0 ? 0 : body.lastIndexOf('\n', s - 1) + 1;
+  const end = e > s && body[e - 1] === '\n' ? e - 1 : e;
+  let b = body.indexOf('\n', end);
+  if (b === -1) b = body.length;
+  return [a, b];
+}
+
+function finish(body, a, b, lines, s, e) {
+  const text = lines.join('\n');
+  const out = body.slice(0, a) + text + body.slice(b);
+  const end = a + text.length;
+  return { body: out, sel: lines.length === 1 && s === e ? [end, end] : [a, end] };
+}
+
+function targetsOf(lines) {
+  const t = [];
+  lines.forEach((l, i) => { if (l.trim() !== '') t.push(i); });
+  if (!t.length && lines.length === 1) t.push(0);
+  return t;
+}
+
+const textOf = (p, line) => (p ? p.rest : line.slice(lineIndent(line).length));
+
+/** Bật/tắt đánh số 1. 2. 3. cho các dòng đang chọn (1 dòng: nối tiếp số của dòng trên). */
+function toggleNumber(body, s, e, fmt) {
+  const [a, b] = lineBounds(body, s, e);
+  const lines = body.slice(a, b).split('\n');
+  const P = lines.map(parseLine);
+  const T = targetsOf(lines);
+  if (!T.length) return null;
+  if (T.every(i => P[i] && P[i].kind === 'num')) {
+    T.forEach(i => { lines[i] = P[i].indent + P[i].rest; });
+  } else {
+    let n = 1;
+    let delim = fmt || '.';
+    if (T.length === 1 && a > 0) {
+      const prevEnd = a - 1;
+      const ps = prevEnd === 0 ? 0 : body.lastIndexOf('\n', prevEnd - 1) + 1;
+      const pp = parseLine(body.slice(ps, prevEnd));
+      if (pp && pp.kind === 'num') { n = pp.n + 1; delim = pp.delim; }
+    }
+    T.forEach(i => {
+      const indent = P[i] ? P[i].indent : lineIndent(lines[i]);
+      lines[i] = indent + n + delim + ' ' + textOf(P[i], lines[i]);
+      n += 1;
+    });
+  }
+  return finish(body, a, b, lines, s, e);
+}
+
+function toggleSimple(body, s, e, kind, marker) {
+  const [a, b] = lineBounds(body, s, e);
+  const lines = body.slice(a, b).split('\n');
+  const P = lines.map(parseLine);
+  const T = targetsOf(lines);
+  if (!T.length) return null;
+  if (T.every(i => P[i] && P[i].kind === kind)) {
+    T.forEach(i => { lines[i] = P[i].indent + P[i].rest; });
+  } else {
+    T.forEach(i => {
+      const indent = P[i] ? P[i].indent : lineIndent(lines[i]);
+      const mk = P[i] && P[i].kind === kind ? P[i].marker : marker;
+      lines[i] = indent + mk + ' ' + textOf(P[i], lines[i]);
+    });
+  }
+  return finish(body, a, b, lines, s, e);
+}
+const toggleBullet = (body, s, e) => toggleSimple(body, s, e, 'bul', '•');
+const toggleCheck = (body, s, e) => toggleSimple(body, s, e, 'chk', '☐');
+
+/** Tick ☐ ↔ ☑ (dòng chưa là checklist sẽ thành ☑). */
+function tickLines(body, s, e) {
+  const [a, b] = lineBounds(body, s, e);
+  const lines = body.slice(a, b).split('\n');
+  const P = lines.map(parseLine);
+  const T = targetsOf(lines);
+  if (!T.length) return null;
+  const allDone = T.every(i => P[i] && P[i].kind === 'chk' && P[i].marker === '☑');
+  const mk = allDone ? '☐' : '☑';
+  T.forEach(i => {
+    const indent = P[i] ? P[i].indent : lineIndent(lines[i]);
+    lines[i] = indent + mk + ' ' + textOf(P[i], lines[i]);
+  });
+  return finish(body, a, b, lines, s, e);
+}
+
+/** Sắp xếp A→Z (bấm lần nữa: Z→A). Không chọn gì → sắp cả cụm dòng liền nhau quanh con trỏ. */
+function sortLines(body, s, e) {
+  let [a, b] = lineBounds(body, s, e);
+  if (s === e) {
+    if (!body.slice(a, b).trim()) return null;
+    while (a > 0) {
+      const ps = a - 1 === 0 ? 0 : body.lastIndexOf('\n', a - 2) + 1;
+      if (!body.slice(ps, a - 1).trim()) break;
+      a = ps;
+    }
+    while (b < body.length) {
+      let ne = body.indexOf('\n', b + 1);
+      if (ne === -1) ne = body.length;
+      if (!body.slice(b + 1, ne).trim()) break;
+      b = ne;
+    }
+  }
+  const lines = body.slice(a, b).split('\n');
+  const idx = [];
+  lines.forEach((l, i) => { if (l.trim()) idx.push(i); });
+  if (idx.length < 2) return null;
+  const P = lines.map(parseLine);
+  const key = (i) => (P[i] ? P[i].rest : lines[i]).trim().toLowerCase();
+  const sorted = [...idx].sort((x, y) => key(x).localeCompare(key(y), 'vi', { numeric: true, sensitivity: 'base' }));
+  const order = sorted.every((v, k) => v === idx[k]) ? [...sorted].reverse() : sorted;
+  const allNum = idx.every(i => P[i] && P[i].kind === 'num');
+  const n0 = allNum ? P[idx[0]].n : 0;
+  const d0 = allNum ? P[idx[0]].delim : '.';
+  const out = lines.slice();
+  idx.forEach((slot, k) => {
+    const src = order[k];
+    out[slot] = allNum ? P[src].indent + (n0 + k) + d0 + ' ' + P[src].rest : lines[src];
+  });
+  return finish(body, a, b, out, s, e);
+}
+
+/** Đánh số lại cả tờ: mỗi cụm dòng số liền nhau được đếm lại 1,2,3… (giữ số bắt đầu của cụm). */
+function renumberAll(body, s) {
+  const orig = body.split('\n');
+  const lines = orig.slice();
+  const before = body.slice(0, s);
+  const ci = before.split('\n').length - 1;
+  const col = s - (before.lastIndexOf('\n') + 1);
+  let run = null;
+  let changed = false;
+  for (let i = 0; i < lines.length; i++) {
+    const p = parseLine(lines[i]);
+    if (p && p.kind === 'num') {
+      const n = run && run.indent === p.indent && run.delim === p.delim ? run.n + 1 : p.n;
+      if (n !== p.n) { lines[i] = p.indent + n + p.delim + ' ' + p.rest; changed = true; }
+      run = { indent: p.indent, delim: p.delim, n };
+    } else run = null;
+  }
+  if (!changed) return null;
+  const lineStart = lines.slice(0, ci).reduce((t, l) => t + l.length + 1, 0);
+  const newCol = Math.max(0, lines[ci].length - (orig[ci].length - col));
+  const caret = lineStart + newCol;
+  return { body: lines.join('\n'), sel: [caret, caret] };
+}
+
+/** Vừa bấm Enter (v đã chứa "\n" tại c-1): nối tiếp số / • / ☐ cho dòng mới. Trả null nếu dòng trên không phải danh sách. */
+function continueList(v, c) {
+  const ls = c >= 2 ? v.lastIndexOf('\n', c - 2) + 1 : 0;
+  const p = parseLine(v.slice(ls, c - 1));
+  if (!p) return null;
+  // dòng danh sách còn trống + Enter → thoát danh sách (xóa đầu dòng)
+  if (!p.rest.trim()) return { body: v.slice(0, ls) + v.slice(c), caret: ls };
+  let pre;
+  if (p.kind === 'num') pre = p.indent + (p.n + 1) + p.delim + ' ';
+  else if (p.kind === 'bul') pre = p.indent + p.marker + ' ';
+  else pre = p.indent + '☐ ';
+  let body = v.slice(0, c) + pre + v.slice(c);
+  if (p.kind === 'num') {
+    // chèn giữa danh sách → đánh số lại các dòng số liền ngay bên dưới
+    const lines = body.split('\n');
+    const idx = v.slice(0, c).split('\n').length - 1;
+    let n = p.n + 1;
+    for (let i = idx + 1; i < lines.length; i++) {
+      const q = parseLine(lines[i]);
+      if (!q || q.kind !== 'num' || q.indent !== p.indent || q.delim !== p.delim) break;
+      n += 1;
+      if (q.n !== n) lines[i] = q.indent + n + q.delim + ' ' + q.rest;
+    }
+    body = lines.join('\n');
+  }
+  return { body, caret: c + pre.length };
+}
+
+/** Vị trí con trỏ hợp lý sau undo/redo: cuối đoạn vừa thay đổi. */
+function diffCaret(oldB, newB) {
+  const m = Math.min(oldB.length, newB.length);
+  let p = 0;
+  while (p < m && oldB[p] === newB[p]) p++;
+  let q = 0;
+  while (q < m - p && oldB[oldB.length - 1 - q] === newB[newB.length - 1 - q]) q++;
+  return newB.length - q;
+}
+/*LIST-HELPERS-END*/
+
+/* ── Tùy chọn hộp công cụ (dùng chung mọi tờ note, lưu trên máy) ── */
+const PREF_KEY = 'lsnotes_prefs_v1';
+function loadPrefs() {
+  try {
+    const d = JSON.parse(lsGet(PREF_KEY) || '{}') || {};
+    return { auto: d.auto !== false, fmt: NUM_FORMATS.includes(d.fmt) ? d.fmt : '.' };
+  } catch { return { auto: true, fmt: '.' }; }
+}
+
 /* ══ Hook dùng chung: danh sách note + tự lưu ═════════════════════════ */
 function useNotes(uid) {
   const [notes, setNotes] = useState(() => loadNotes(uid));
@@ -147,6 +366,8 @@ function Icon({ name, size = 18, color = 'currentColor' }) {
     case 'pin':    return <svg {...p}><path d="M12 17v5" /><path d="M9 3h6l-1 6 3 3H7l3-3z" /></svg>;
     case 'search': return <svg {...p}><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.5" y2="16.5" /></svg>;
     case 'close':  return <svg {...p}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>;
+    case 'undo':   return <svg {...p}><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-15-6.7L3 13" /></svg>;
+    case 'redo':   return <svg {...p}><path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 15-6.7L21 13" /></svg>;
     case 'note':   return <svg {...p}><path d="M4 4h12l4 4v12H4z" /><path d="M16 4v4h4" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></svg>;
     default: return null;
   }
@@ -161,10 +382,30 @@ function Tape({ color, rot = -3 }) {
   );
 }
 
+/* Nút nhỏ trong hộp công cụ — giữ nguyên con trỏ/bàn phím của ô soạn khi bấm. */
+function Chip({ children, onClick, label, active, disabled, dark, col, ink, pressed }) {
+  return (
+    <button type="button" aria-label={label} title={label} disabled={disabled} aria-pressed={pressed}
+      onMouseDown={e => e.preventDefault()} onClick={onClick} className="bb-btn-tap"
+      style={{ flexShrink: 0, height: 32, minWidth: 32, padding: '0 10px', borderRadius: 999, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.35 : 1,
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, fontFamily: FONT, fontSize: 13, fontWeight: 800, whiteSpace: 'nowrap', color: ink,
+        background: active ? col.edge : (dark ? 'rgba(255,255,255,.08)' : 'rgba(255,255,255,.62)'),
+        border: `1.5px solid ${active ? col.edge : (dark ? 'rgba(255,255,255,.18)' : col.edge + '99')}` }}>
+      {children}
+    </button>
+  );
+}
+
 /* ── Soạn một tờ note (dùng cho cả màn đầy đủ và ghi nhanh) ── */
 function NoteEditor({ note, dark, onChange, onDelete, onClose, compact }) {
   const [confirmDel, setConfirmDel] = useState(false);
   const bodyRef = useRef(null);
+  const [prefs, setPrefsState] = useState(loadPrefs);
+  const [copied, setCopied] = useState(null);
+  const [, setTick] = useState(0);
+  const pendingSel = useRef(null);
+  const hist = useRef({ st: [{ body: note.body }], i: 0, last: 0, typing: false });
+  const copyTimer = useRef(null);
   const col = NOTE_COLORS[note.color] || NOTE_COLORS[0];
   const paper = dark ? col.dk : col.paper;
   const ink = dark ? '#F6E4EE' : '#4A1D3A';
@@ -172,6 +413,112 @@ function NoteEditor({ note, dark, onChange, onDelete, onClose, compact }) {
 
   useEffect(() => { const t = setTimeout(() => { try { bodyRef.current && bodyRef.current.focus(); } catch { /* bỏ qua */ } }, 120); return () => clearTimeout(t); }, [note.id]);
   useEffect(() => { if (!confirmDel) return; const t = setTimeout(() => setConfirmDel(false), 3000); return () => clearTimeout(t); }, [confirmDel]);
+
+  useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current); }, []);
+
+  // Đặt lại con trỏ sau khi nội dung bị thay bằng code (đánh số, undo…)
+  useLayoutEffect(() => {
+    const sel = pendingSel.current;
+    if (!sel) return;
+    pendingSel.current = null;
+    try { bodyRef.current && bodyRef.current.setSelectionRange(sel[0], sel[1]); } catch { /* bỏ qua */ }
+  }, [note.body]);
+
+  const setPref = (patch) => {
+    const n = { ...prefs, ...patch };
+    setPrefsState(n);
+    lsSet(PREF_KEY, JSON.stringify(n));
+  };
+
+  /* Lịch sử hoàn tác: gõ liên tục (<0,8s) gộp thành 1 bước; thao tác công cụ là 1 bước riêng */
+  const record = (body, force) => {
+    const h = hist.current;
+    if (h.st[h.i].body === body) return;
+    h.st = h.st.slice(0, h.i + 1);
+    if (!force && h.typing && Date.now() - h.last < 800) {
+      h.st[h.i] = { body };
+    } else {
+      h.st.push({ body });
+      h.i = h.st.length - 1;
+      if (h.st.length > 100) { h.st.shift(); h.i -= 1; }
+    }
+    h.last = Date.now();
+    h.typing = !force;
+    setTick(t => t + 1);
+  };
+
+  const commitBody = (body, sel, force) => {
+    const nb = body.slice(0, MAX_BODY);
+    record(nb, force);
+    const ta = bodyRef.current;
+    const fixed = sel ? [Math.min(sel[0], nb.length), Math.min(sel[1], nb.length)] : null;
+    if (nb === note.body) {
+      if (fixed && ta) { try { ta.setSelectionRange(fixed[0], fixed[1]); } catch { /* bỏ qua */ } }
+      return;
+    }
+    pendingSel.current = fixed;
+    onChange({ body: nb });
+  };
+
+  const handleBodyChange = (e) => {
+    const ta = e.target;
+    const v = ta.value;
+    const prev = note.body;
+    const c = ta.selectionStart;
+    // Vừa bấm Enter (đúng 1 ký tự xuống dòng được chèn tại con trỏ) → nối tiếp danh sách
+    if (prefs.auto && v.length === prev.length + 1 && c > 0 && v[c - 1] === '\n' && v.slice(0, c - 1) + v.slice(c) === prev) {
+      const r = continueList(v, c);
+      if (r) { commitBody(r.body, [r.caret, r.caret], true); return; }
+    }
+    commitBody(v, null, false);
+  };
+
+  const runTool = (fn, ...args) => {
+    const ta = bodyRef.current;
+    if (!ta) return;
+    const r = fn(note.body, ta.selectionStart, ta.selectionEnd, ...args);
+    if (!r) return;
+    commitBody(r.body, r.sel, true);
+    try { ta.focus(); } catch { /* bỏ qua */ }
+  };
+
+  const gotoHist = (i) => {
+    const h = hist.current;
+    if (i < 0 || i >= h.st.length) return;
+    h.i = i;
+    h.typing = false;
+    const body = h.st[i].body;
+    if (body !== note.body) {
+      const c = diffCaret(note.body, body);
+      pendingSel.current = [c, c];
+      onChange({ body });
+    }
+    setTick(t => t + 1);
+    try { bodyRef.current && bodyRef.current.focus(); } catch { /* bỏ qua */ }
+  };
+
+  const copyAll = async () => {
+    const text = (note.title ? note.title + '\n\n' : '') + note.body;
+    let ok = false;
+    try { await navigator.clipboard.writeText(text); ok = true; } catch { /* thử cách khác */ }
+    if (!ok) {
+      try {
+        const t = document.createElement('textarea');
+        t.value = text; t.style.position = 'fixed'; t.style.opacity = '0';
+        document.body.appendChild(t); t.select();
+        ok = document.execCommand('copy');
+        document.body.removeChild(t);
+      } catch { /* bỏ qua */ }
+    }
+    setCopied(ok ? 'Đã chép!' : 'Không chép được');
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    copyTimer.current = setTimeout(() => setCopied(null), 1600);
+  };
+
+  const canUndo = hist.current.i > 0;
+  const canRedo = hist.current.i < hist.current.st.length - 1;
+  const cc = { dark, col, ink };
+  const divider = <span aria-hidden="true" style={{ flexShrink: 0, width: 1.5, height: 18, borderRadius: 1, background: dark ? 'rgba(255,255,255,.18)' : col.edge + '99' }} />;
 
   const lined = `repeating-linear-gradient(transparent 0 25px, ${dark ? 'rgba(255,255,255,.10)' : 'rgba(160,100,140,.20)'} 25px 26px)`;
 
@@ -207,7 +554,27 @@ function NoteEditor({ note, dark, onChange, onDelete, onClose, compact }) {
         <Tape color={col.tape} />
         <input value={note.title} maxLength={MAX_TITLE} onChange={e => onChange({ title: e.target.value })} placeholder="Tiêu đề (không bắt buộc)"
           style={{ border: 'none', outline: 'none', background: 'transparent', color: ink, fontFamily: HAND, fontSize: 20, fontWeight: 800, padding: '0 0 6px', marginBottom: 4, borderBottom: `2px dashed ${col.edge}`, width: '100%', boxSizing: 'border-box' }} />
-        <textarea ref={bodyRef} value={note.body} maxLength={MAX_BODY} onChange={e => onChange({ body: e.target.value })} placeholder="Viết gì cũng được nhé… từ mới, công thức, việc cần nhớ…"
+        {/* hộp công cụ */}
+        <div role="toolbar" aria-label="Công cụ soạn ghi chú"
+          style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, padding: '8px 0 8px', overflowX: 'auto', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
+          <Chip {...cc} label="Hoàn tác" disabled={!canUndo} onClick={() => gotoHist(hist.current.i - 1)}><Icon name="undo" size={16} /></Chip>
+          <Chip {...cc} label="Làm lại" disabled={!canRedo} onClick={() => gotoHist(hist.current.i + 1)}><Icon name="redo" size={16} /></Chip>
+          {divider}
+          <Chip {...cc} label="Đánh số dòng" onClick={() => runTool(toggleNumber, prefs.fmt)}>{'1' + prefs.fmt}</Chip>
+          <Chip {...cc} label="Đổi kiểu số: 1.  1)  1/" onClick={() => setPref({ fmt: NUM_FORMATS[(NUM_FORMATS.indexOf(prefs.fmt) + 1) % NUM_FORMATS.length] })}>Đổi kiểu</Chip>
+          <Chip {...cc} label="Gạch đầu dòng" onClick={() => runTool(toggleBullet)}>•</Chip>
+          <Chip {...cc} label="Checklist" onClick={() => runTool(toggleCheck)}>☐</Chip>
+          <Chip {...cc} label="Tick xong / chưa xong" onClick={() => runTool(tickLines)}>☑</Chip>
+          {divider}
+          <Chip {...cc} label="Sắp xếp A đến Z (bấm lại: Z đến A)" onClick={() => runTool(sortLines)}>A→Z</Chip>
+          <Chip {...cc} label="Đánh số lại cả tờ" onClick={() => runTool(renumberAll)}>Đánh số lại</Chip>
+          <Chip {...cc} label="Chép cả tờ note" onClick={copyAll} active={!!copied}>{copied || 'Chép'}</Chip>
+          {divider}
+          <Chip {...cc} label="Tự đánh số khi xuống dòng" pressed={prefs.auto} active={prefs.auto} onClick={() => setPref({ auto: !prefs.auto })}>
+            {prefs.auto ? '●' : '○'} Tự đánh số
+          </Chip>
+        </div>
+        <textarea ref={bodyRef} value={note.body} maxLength={MAX_BODY} onChange={handleBodyChange} placeholder="Viết gì cũng được nhé… Gõ &quot;1. &quot; rồi Enter để tự đánh số"
           style={{ flex: 1, minHeight: compact ? 150 : 240, border: 'none', outline: 'none', resize: 'none', backgroundColor: 'transparent', backgroundImage: lined, backgroundAttachment: 'local', color: ink, fontFamily: HAND, fontSize: 17, fontWeight: 600, lineHeight: '26px', padding: 0, width: '100%', boxSizing: 'border-box' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10.5, fontWeight: 700, color: dark ? 'rgba(255,255,255,.5)' : 'rgba(74,29,58,.5)', paddingTop: 6, fontFamily: FONT }}>
           <span>{note.lesson ? 'Ghi chú của bài học' : 'Sổ ghi chú'}</span>
